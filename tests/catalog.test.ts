@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "../src/catalog.js";
 import { validateLegalSource, type LegalSource } from "../src/sources.js";
+import { normalizeTmdbMovie } from "../src/providers/tmdb.js";
 
 describe("cinema catalog", () => {
   it("includes the requested South Asian and global categories", () => {
@@ -47,5 +48,23 @@ describe("legal source validation", () => {
 
   it("rejects hosts outside the explicit allowlist", () => {
     expect(validateLegalSource({ ...goodSource, url: "https://example.com/movie.mp4", host: "example.com" }).valid).toBe(false);
+  });
+});
+
+describe("TMDB metadata normalization", () => {
+  it("normalizes provider data without treating metadata as playback rights", () => {
+    const movie = normalizeTmdbMovie({
+      id: 123,
+      title: "Example Film",
+      overview: "A test synopsis",
+      release_date: "2024-04-05",
+      poster_path: "/poster.jpg",
+      genre_ids: [18, 9999]
+    }, "bd-bengali");
+    expect(movie.id).toBe("cineworld-tmdb-123");
+    expect(movie.releaseInfo).toBe("2024");
+    expect(movie.poster).toBe("https://image.tmdb.org/t/p/w500/poster.jpg");
+    expect(movie.genres).toEqual(["Drama"]);
+    expect(movie.sourceIds).toEqual([]);
   });
 });

@@ -17,7 +17,7 @@ const manifest = {
     type: "movie",
     id: category.id,
     name: category.name,
-    extra: [{ name: "search", isRequired: false }]
+    extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
   })),
   idPrefixes: ["tt", "cineworld-"],
   behaviorHints: { configurable: false, configurationRequired: false }
@@ -57,7 +57,8 @@ builder.defineMetaHandler(({ type, id }: { type: string; id: string }) => {
 builder.defineSubtitlesHandler(() => Promise.resolve({ subtitles: [] }));
 
 builder.defineStreamHandler(({ id }: { id: string }) => {
-  const sources = getReviewedSources(id);
+  const movie = getCatalog().find((item) => (item.imdbId ?? item.id) === id);
+  const sources = movie ? getReviewedSources(movie.id) : [];
   return Promise.resolve({ streams: sources.map((source) => ({
     title: `CineWorld · ${source.license}`,
     url: source.url,
@@ -69,13 +70,13 @@ const addonInterface = builder.getInterface();
 const app = express();
 app.disable("x-powered-by");
 app.use((req, res, next) => { res.setHeader("access-control-allow-origin", "*"); res.setHeader("access-control-allow-methods", "GET, OPTIONS"); res.setHeader("access-control-allow-headers", "content-type"); if (req.method === "OPTIONS") { res.status(204).end(); return; } next(); });
-app.use("/", getRouter(addonInterface));
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", service: "cineworld-addon", version: manifest.version, playbackSources: "reviewed-only" });
 });
 app.get("/api/catalog", (_req, res) => {
   res.json({ categories: CINEMA_CATEGORIES, movies: getCatalog() });
 });
+app.use("/", getRouter(addonInterface));
 app.use((_req, res) => { res.status(404).json({ error: "not_found" }); });
 
 const server = app.listen(port, "0.0.0.0", () => {

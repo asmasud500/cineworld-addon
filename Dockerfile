@@ -15,4 +15,4 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 EXPOSE 7000
 ENV PORT=7000
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/src/index.js"]

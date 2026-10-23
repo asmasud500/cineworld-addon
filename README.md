@@ -39,7 +39,7 @@ npm run check
 
 ## Upstream catalog add-ons
 
-CineWorld reads public Stremio-compatible catalog add-on manifests and catalog responses. The default is IndiaStreams (`https://indiastreams.rdata.in/manifest.json`); configure additional HTTPS manifest URLs as a comma-separated `UPSTREAM_CATALOG_ADDONS` environment variable. CineWorld selects upstream movie catalogs by matching category names/IDs, then normalizes returned metadata for its own catalog response. Unsupported categories can remain empty until a compatible upstream catalog is configured.
+CineWorld reads public Stremio-compatible catalog add-on manifests and catalog responses. Defaults include Indian Regional Catalog (`https://83e20802dcf1-indian-streams.baby-beamup.club/manifest.json`) and IndiaStreams (`https://indiastreams.rdata.in/manifest.json`). Configure manifest URLs as a comma-separated `UPSTREAM_CATALOG_ADDONS` environment variable. CineWorld selects upstream movie catalogs by matching category names/IDs, then normalizes returned metadata for its own catalog response. Some categories (such as Bangladesh-specific Bengali, Pakistani, Nepali, Sri Lankan, Korean, Chinese, and Japanese cinema) may remain empty unless an upstream add-on actually provides those catalogs.
 
 **Important limitation:** a server-side add-on cannot inspect the private list of add-ons installed inside a user's Nuvio app. The configured URLs are therefore explicit server configuration, not automatic discovery of the user's Nuvio account. Install the desired catalog add-ons in Nuvio separately if you want to browse them directly there. Upstream catalog support is not the same as stream support; CineWorld does not proxy arbitrary playback links.
 

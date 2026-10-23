@@ -68,7 +68,8 @@ function catalogMatches(catalog: UpstreamCatalog, categoryId: CinemaCategoryId):
 function normalize(item: UpstreamMeta, categoryId: CinemaCategoryId): Movie | null {
   const id = item.id?.trim();
   const name = item.name?.trim();
-  // Catalog endpoint is movie-scoped; some providers omit type on preview items.\n  if (!id || !name || (item.type && item.type !== "movie")) return null;
+  // Catalog endpoint is movie-scoped; some providers omit type on preview items.
+  if (!id || !name || (item.type && item.type !== "movie")) return null;
   const poster = item.poster && /^https:\/\//i.test(item.poster) ? item.poster : undefined;
   const imdbId = item.imdb_id ?? item.imdbId ?? (/^tt\d+$/.test(id) ? id : undefined);
   return {

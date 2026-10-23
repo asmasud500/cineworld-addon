@@ -24,7 +24,7 @@ const manifest = {
   behaviorHints: { configurable: false, configurationRequired: false }
 };
 
-const builder = new addonBuilder(manifest as any);
+const builder = addonBuilder(manifest as any);
 
 builder.defineCatalogHandler(({ id, extra }: { id: string; extra?: { search?: string } }) => {
   const results = extra?.search ? searchCatalog(extra.search) : getCatalog(id);

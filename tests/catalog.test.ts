@@ -44,4 +44,8 @@ describe("legal source validation", () => {
   it("rejects URLs with embedded credentials", () => {
     expect(validateLegalSource({ ...goodSource, url: "https://user:pass@archive.org/movie.mp4" }).valid).toBe(false);
   });
+
+  it("rejects hosts outside the explicit allowlist", () => {
+    expect(validateLegalSource({ ...goodSource, url: "https://example.com/movie.mp4", host: "example.com" }).valid).toBe(false);
+  });
 });

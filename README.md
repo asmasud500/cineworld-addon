@@ -44,6 +44,10 @@ CineWorld reads public Stremio-compatible catalog add-on manifests and catalog r
 
 **Important limitation:** a server-side add-on cannot inspect the private list of add-ons installed inside a user's Nuvio app. The configured URLs are therefore explicit server configuration, not automatic discovery of the user's Nuvio account. Install the desired catalog add-ons in Nuvio separately if you want to browse them directly there. Upstream catalog support is not the same as stream support; CineWorld does not proxy arbitrary playback links.
 
+## Automatic new releases (TMDB)
+
+Set `TMDB_API_KEY` (free v3 key from themoviedb.org) or `TMDB_READ_ACCESS_TOKEN`. CineWorld then asks TMDB for films released in the last 180 days, per category (language/country filters), newest first, and puts them at the front of every category and of the **New Releases** hero catalog. New films appear as soon as TMDB lists them (10 minute cache, no redeploy needed). IMDb ids are resolved so other Stremio/Nuvio stream add-ons can match the film; brand-new films without an IMDb id yet use a `tmdb:<id>` id. This is metadata only: no playback links are created. Without a key the feature is simply off.
+
 ## Legal playback policy
 
 A source must be added to `src/sources.ts` only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. Metadata-provider results are for discovery only and never create playback links. The catalog deliberately has **no titles or playback streams by default** until verified metadata and source rights are curated. This avoids implying that a film is public domain merely because it is old or appears on an archive.

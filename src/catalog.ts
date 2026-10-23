@@ -26,6 +26,8 @@ export interface Movie {
   releaseInfo: string;
   genres: string[];
   poster?: string;
+  background?: string;
+  releaseDate?: string;
   imdbId?: string;
   categoryIds: CinemaCategoryId[];
   sourceIds: string[];
@@ -53,9 +55,12 @@ export const FEATURED_CATALOG_ID = "new-releases";
 export const FEATURED_CATALOG_NAME = "New Releases";
 export const FEATURED_LIMIT = 100;
 
-function releaseYear(movie: Movie): number {
+/** Exact release date when known, otherwise the first day of the release year (0 when unknown). */
+function releaseTime(movie: Movie): number {
+  const exact = movie.releaseDate ? Date.parse(movie.releaseDate) : Number.NaN;
+  if (!Number.isNaN(exact)) return exact;
   const match = movie.releaseInfo.match(/\d{4}/);
-  return match ? Number.parseInt(match[0], 10) : 0;
+  return match ? Date.UTC(Number.parseInt(match[0], 10), 0, 1) : 0;
 }
 
 /**
@@ -69,5 +74,5 @@ export function buildFeaturedFeed(lists: Movie[][], limit = FEATURED_LIMIT): Mov
   for (let i = 0; i < longest; i++) for (const list of lists) if (list[i]) interleaved.push(list[i]);
   const unique = new Map<string, Movie>();
   for (const movie of interleaved) if (!unique.has(movie.imdbId ?? movie.id)) unique.set(movie.imdbId ?? movie.id, movie);
-  return [...unique.values()].sort((a, b) => releaseYear(b) - releaseYear(a)).slice(0, limit);
+  return [...unique.values()].sort((a, b) => releaseTime(b) - releaseTime(a)).slice(0, limit);
 }

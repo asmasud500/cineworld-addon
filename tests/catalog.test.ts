@@ -138,3 +138,12 @@ describe("featured feed", () => {
     expect(feed.map((m) => m.id)).toEqual(["a1", "b1", "b2", "a2", "c1"]);
   });
 });
+
+describe("featured feed ordering by exact date", () => {
+  it("ranks a film released today above year-only entries of the same year", async () => {
+    const { buildFeaturedFeed } = await import("../src/catalog.js");
+    const mk = (id: string, releaseInfo: string, releaseDate?: string) => ({ id, type: "movie" as const, name: id, description: "", releaseInfo, ...(releaseDate ? { releaseDate } : {}), genres: [], categoryIds: ["world" as const], sourceIds: [] });
+    const feed = buildFeaturedFeed([[mk("old", "2026"), mk("today", "2026", "2026-10-24"), mk("last-week", "2026", "2026-10-17")]]);
+    expect(feed.map((m) => m.id)).toEqual(["today", "last-week", "old"]);
+  });
+});

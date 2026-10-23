@@ -4,6 +4,7 @@ const { addonBuilder, getRouter } = stremioAddonSdk as typeof import("stremio-ad
 import { CINEMA_CATEGORIES, FEATURED_CATALOG_ID, FEATURED_CATALOG_NAME, buildFeaturedFeed, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
 import { getRememberedMovie, getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus, warmSeenMovies } from "./providers/upstream.js";
+import { getTmdbNewReleases, isTmdbConfigured } from "./providers/tmdb.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
@@ -11,7 +12,7 @@ const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.2.0",
+  version: "0.3.0",
   name: "CineWorld",
   description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Playback is shown only for reviewed rights-cleared sources.",
   resources: ["catalog", "meta", "stream", "subtitles"],
@@ -40,12 +41,12 @@ function toMetaPreview(movie: Movie) {
     releaseInfo: movie.releaseInfo,
     genres: movie.genres,
     poster: movie.poster,
-    ...(movie.poster ? { background: movie.poster } : {})
+    ...(movie.poster ? { background: movie.background ?? movie.poster } : {})
   };
 }
 
 function toMeta(movie: Movie) {
-  return { ...toMetaPreview(movie), ...(movie.imdbId ? { imdb_id: movie.imdbId } : {}), ...(movie.poster ? { background: movie.poster } : {}) };
+  return { ...toMetaPreview(movie), ...(movie.imdbId ? { imdb_id: movie.imdbId } : {}), ...((movie.background ?? movie.poster) ? { background: movie.background ?? movie.poster } : {}) };
 }
 
 function categoryIdFrom(value: string): CinemaCategoryId {
@@ -56,12 +57,19 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
   const skip = Math.max(0, Number.parseInt(extra?.skip ?? "0", 10) || 0);
   if (id === FEATURED_CATALOG_ID) {
     // Automatic feed: newest movies across every category, refreshed from upstream (10 min cache).
-    const lists = await Promise.all(CINEMA_CATEGORIES.map((category) => getUpstreamCatalog(category.id).catch(() => [] as Movie[])));
+    const lists = await Promise.all(CINEMA_CATEGORIES.flatMap((category) => [
+      getTmdbNewReleases(category.id).catch(() => [] as Movie[]),
+      getUpstreamCatalog(category.id).catch(() => [] as Movie[])
+    ]));
     const feed = buildFeaturedFeed([getCatalog(), ...lists]);
     return { metas: feed.slice(skip, skip + 100).map(toMetaPreview) };
   }
   const categoryId = categoryIdFrom(id);
-  const remote = await getUpstreamCatalog(categoryId, skip, extra?.search);
+  const [fresh, upstream] = await Promise.all([
+    extra?.search ? Promise.resolve([] as Movie[]) : getTmdbNewReleases(categoryId, skip).catch(() => [] as Movie[]),
+    getUpstreamCatalog(categoryId, skip, extra?.search)
+  ]);
+  const remote = [...fresh, ...upstream]; // brand-new releases first
   const local = extra?.search ? searchCatalog(extra.search) : getCatalog(id).slice(skip, skip + 100);
   const unique = new Map<string, Movie>();
   for (const movie of [...local, ...remote]) unique.set(movie.imdbId ?? movie.id, movie);
@@ -79,7 +87,8 @@ builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => 
   const remote = await getUpstreamMeta(id, type);
   if (remote) return { meta: toMeta(remote) };
   // 3) Cold start: rebuild the remembered set from the catalogs and try again.
-  await warmSeenMovies(CINEMA_CATEGORIES.map((category) => category.id));
+  const categoryIds = CINEMA_CATEGORIES.map((category) => category.id);
+  await Promise.allSettled([warmSeenMovies(categoryIds), ...categoryIds.map((categoryId) => getTmdbNewReleases(categoryId))]);
   const warmed = getRememberedMovie(id);
   return { meta: warmed ? toMeta(warmed) : null };
 });
@@ -101,7 +110,7 @@ const app = express();
 app.disable("x-powered-by");
 app.use((req, res, next) => { res.setHeader("access-control-allow-origin", "*"); res.setHeader("access-control-allow-methods", "GET, OPTIONS"); res.setHeader("access-control-allow-headers", "content-type"); if (req.method === "OPTIONS") { res.status(204).end(); return; } next(); });
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", service: "cineworld-addon", version: manifest.version, ...getUpstreamSourceStatus() });
+  res.json({ status: "ok", service: "cineworld-addon", version: manifest.version, tmdbNewReleases: isTmdbConfigured(), ...getUpstreamSourceStatus() });
 });
 app.get("/api/catalog", (_req, res) => {
   res.json({ categories: CINEMA_CATEGORIES, movies: getCatalog() });

@@ -8,7 +8,7 @@ Legal-first movie discovery for **Stremio and Nuvio**. Nuvio documents support f
 
 - Stremio-compatible manifest and movie catalog endpoint (also intended for Nuvio's Stremio-protocol add-on support).
 - International category catalog (Bangladesh/West Bengal Bengali, Bollywood, Tamil, Telugu, Malayalam, Kannada, Pakistani, Nepali, Sri Lankan, Hollywood, Korean, Chinese, Japanese, and world cinema).
-- Optional IMDb-linked metadata search, posters, and details through OMDb.com when `OMDB_API_KEY` is configured. IMDb metadata is never treated as proof of streaming rights.
+- Catalog discovery from configurable Stremio-compatible add-ons (default: IndiaStreams); normalized movie cards and posters are sourced from upstream catalog responses.
 - Legal-source registry with strict URL/host validation and explicit source review status.
 - Subtitle resource endpoint (empty until licensed/authorized subtitle records are curated).
 - Catalog pagination for Stremio-style `skip` requests.
@@ -37,11 +37,11 @@ Run checks:
 npm run check
 ```
 
-## IMDb metadata setup
+## Upstream catalog add-ons
 
-IMDb does not offer a general free public REST API for this use. CineWorld therefore uses the OMDb API, which returns IMDb IDs and IMDb-linked movie metadata. Get an API key at [OMDb API](https://www.omdbapi.com/apikey.aspx), then set `OMDB_API_KEY` in `.env` locally or in your hosting provider's secret/environment settings. Never commit the key or paste it into public issues.
+CineWorld reads public Stremio-compatible catalog add-on manifests and catalog responses. The default is IndiaStreams (`https://indiastreams.rdata.in/manifest.json`); configure additional HTTPS manifest URLs as a comma-separated `UPSTREAM_CATALOG_ADDONS` environment variable. CineWorld selects upstream movie catalogs by matching category names/IDs, then normalizes returned metadata for its own catalog response. Unsupported categories can remain empty until a compatible upstream catalog is configured.
 
-OMDb supports title search and lookup by IMDb ID. Its public API does not provide reliable language/country discovery filters, so the category pages currently use best-effort title searches; they are not guaranteed language-specific catalogs. Exact title searches and `tt...` IMDb ID lookups are more reliable. Metadata is discovery-only and never creates playback links.
+**Important limitation:** a server-side add-on cannot inspect the private list of add-ons installed inside a user's Nuvio app. The configured URLs are therefore explicit server configuration, not automatic discovery of the user's Nuvio account. Install the desired catalog add-ons in Nuvio separately if you want to browse them directly there. Upstream catalog support is not the same as stream support; CineWorld does not proxy arbitrary playback links.
 
 ## Legal playback policy
 
@@ -55,7 +55,7 @@ Nuvio documentation describes add-ons as HTTP services that publish a manifest a
 
 ## Deployment
 
-Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT` and `PUBLIC_BASE_URL`. Optionally set `OMDB_API_KEY` in your host's secret/environment settings to enable IMDb-linked metadata search and details. Use HTTPS in production and configure the host health check against `/api/health`. Do not store secrets in source control. Do not store secrets in source control.
+Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT` and `PUBLIC_BASE_URL`. Set `UPSTREAM_CATALOG_ADDONS` in your host environment to choose the upstream catalog manifests (comma-separated HTTPS URLs). Use HTTPS in production and configure the host health check against `/api/health`. Do not store secrets in source control. Do not store secrets in source control.
 
 ## Roadmap
 

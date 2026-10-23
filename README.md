@@ -28,7 +28,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Open `http://localhost:7000/manifest.json` for Stremio and `http://localhost:7001/api/health` / `http://localhost:7001/api/catalog` for the protocol-neutral API. The API listens on `API_PORT` (default `PORT + 1`) because the SDK owns its own HTTP listener.
+Open `http://localhost:7000/manifest.json` for Stremio/Nuvio and `http://localhost:7000/api/health` / `http://localhost:7000/api/catalog` for health and catalog information. All routes share one HTTP listener for simpler deployment.
 
 Run checks:
 
@@ -38,7 +38,7 @@ npm run check
 
 ## Legal playback policy
 
-A source must be added to `src/sources.ts` only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. The example catalog deliberately has **no playback streams by default**. This avoids implying that a film is public domain merely because it is old or appears on an archive.
+A source must be added to `src/sources.ts` only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. The catalog deliberately has **no titles or playback streams by default** until verified metadata and source rights are curated. This avoids implying that a film is public domain merely because it is old or appears on an archive.
 
 Never add arbitrary user-provided URLs to playback responses. The validator accepts HTTPS only, rejects credentials and non-allowlisted hosts, and requires an explicit `reviewed: true` record.
 
@@ -48,7 +48,7 @@ Nuvio documentation describes add-ons as HTTP services that publish a manifest a
 
 ## Deployment
 
-Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT`, `API_PORT`, and `PUBLIC_BASE_URL`. Expose both listeners or configure a reverse proxy that routes the Stremio manifest paths to the add-on listener and `/api/*` to the neutral API listener. Use HTTPS in production. Configure a health check against `/api/health` on the API listener. Do not store secrets in source control.
+Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT` and `PUBLIC_BASE_URL`. Use HTTPS in production and configure the host health check against `/api/health`. Do not store secrets in source control. Do not store secrets in source control.
 
 ## Roadmap
 

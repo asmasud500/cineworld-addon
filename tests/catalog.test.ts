@@ -11,7 +11,7 @@ describe("cinema catalog", () => {
   });
 
   it("returns an empty stream-ready catalog until reviewed titles are curated", () => {
-    expect(getCatalog()).toHaveLength(1);
+    expect(getCatalog()).toHaveLength(0);
     expect(searchCatalog("not a title")).toHaveLength(0);
   });
 });

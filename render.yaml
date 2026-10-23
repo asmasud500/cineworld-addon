@@ -9,5 +9,3 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
-      - key: OMDB_API_KEY
-        sync: false

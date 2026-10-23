@@ -1,7 +1,7 @@
 import express from "express";
 import stremioAddonSdk from "stremio-addon-sdk";
 const { addonBuilder, getRouter } = stremioAddonSdk as typeof import("stremio-addon-sdk");
-import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "./catalog.js";
+import { CINEMA_CATEGORIES, FEATURED_CATALOG_ID, FEATURED_CATALOG_NAME, buildFeaturedFeed, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
 import { getRememberedMovie, getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus, warmSeenMovies } from "./providers/upstream.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
@@ -11,17 +11,21 @@ const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.1.0",
+  version: "0.2.0",
   name: "CineWorld",
   description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Playback is shown only for reviewed rights-cleared sources.",
   resources: ["catalog", "meta", "stream", "subtitles"],
   types: ["movie"],
-  catalogs: CINEMA_CATEGORIES.map((category) => ({
-    type: "movie",
-    id: category.id,
-    name: category.name,
-    extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
-  })),
+  catalogs: [
+    // First catalog = home hero / top row in Stremio and Nuvio.
+    { type: "movie", id: FEATURED_CATALOG_ID, name: FEATURED_CATALOG_NAME, extra: [{ name: "skip", isRequired: false }] },
+    ...CINEMA_CATEGORIES.map((category) => ({
+      type: "movie",
+      id: category.id,
+      name: category.name,
+      extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
+    }))
+  ],
   behaviorHints: { configurable: false, configurationRequired: false }
 };
 
@@ -35,7 +39,8 @@ function toMetaPreview(movie: Movie) {
     description: movie.description,
     releaseInfo: movie.releaseInfo,
     genres: movie.genres,
-    poster: movie.poster
+    poster: movie.poster,
+    ...(movie.poster ? { background: movie.poster } : {})
   };
 }
 
@@ -49,6 +54,12 @@ function categoryIdFrom(value: string): CinemaCategoryId {
 
 builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { search?: string; skip?: string } }) => {
   const skip = Math.max(0, Number.parseInt(extra?.skip ?? "0", 10) || 0);
+  if (id === FEATURED_CATALOG_ID) {
+    // Automatic feed: newest movies across every category, refreshed from upstream (10 min cache).
+    const lists = await Promise.all(CINEMA_CATEGORIES.map((category) => getUpstreamCatalog(category.id).catch(() => [] as Movie[])));
+    const feed = buildFeaturedFeed([getCatalog(), ...lists]);
+    return { metas: feed.slice(skip, skip + 100).map(toMetaPreview) };
+  }
   const categoryId = categoryIdFrom(id);
   const remote = await getUpstreamCatalog(categoryId, skip, extra?.search);
   const local = extra?.search ? searchCatalog(extra.search) : getCatalog(id).slice(skip, skip + 100);

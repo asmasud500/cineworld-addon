@@ -124,3 +124,17 @@ describe("IMDb provider resilience", () => {
     }
   });
 });
+
+describe("featured feed", () => {
+  const mk = (id: string, year: string, cat: any) => ({ id, type: "movie" as const, name: id, description: "", releaseInfo: year, genres: [], categoryIds: [cat], sourceIds: [] });
+
+  it("sorts newest first, interleaves categories and removes duplicates", async () => {
+    const { buildFeaturedFeed } = await import("../src/catalog.js");
+    const feed = buildFeaturedFeed([
+      [mk("a1", "2026", "tamil"), mk("a2", "2024", "tamil")],
+      [mk("b1", "2026", "korean"), mk("a1", "2026", "korean"), mk("b2", "2025", "korean")],
+      [mk("c1", "", "world")]
+    ]);
+    expect(feed.map((m) => m.id)).toEqual(["a1", "b1", "b2", "a2", "c1"]);
+  });
+});

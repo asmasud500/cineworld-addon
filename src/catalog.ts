@@ -47,3 +47,27 @@ export function searchCatalog(query: string): Movie[] {
     movie.genres.some((genre) => genre.toLocaleLowerCase().includes(normalized))
   );
 }
+
+/** Id of the automatic "newest first" catalog. Listed first in the manifest so clients use it for the home hero. */
+export const FEATURED_CATALOG_ID = "new-releases";
+export const FEATURED_CATALOG_NAME = "New Releases";
+export const FEATURED_LIMIT = 100;
+
+function releaseYear(movie: Movie): number {
+  const match = movie.releaseInfo.match(/\d{4}/);
+  return match ? Number.parseInt(match[0], 10) : 0;
+}
+
+/**
+ * Merge several category lists into one newest-first feed.
+ * Categories are interleaved round-robin first, then stably sorted by year,
+ * so one language cannot crowd out the others within the same year.
+ */
+export function buildFeaturedFeed(lists: Movie[][], limit = FEATURED_LIMIT): Movie[] {
+  const interleaved: Movie[] = [];
+  const longest = Math.max(0, ...lists.map((list) => list.length));
+  for (let i = 0; i < longest; i++) for (const list of lists) if (list[i]) interleaved.push(list[i]);
+  const unique = new Map<string, Movie>();
+  for (const movie of interleaved) if (!unique.has(movie.imdbId ?? movie.id)) unique.set(movie.imdbId ?? movie.id, movie);
+  return [...unique.values()].sort((a, b) => releaseYear(b) - releaseYear(a)).slice(0, limit);
+}

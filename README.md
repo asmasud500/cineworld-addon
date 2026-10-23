@@ -11,6 +11,7 @@ Legal-first movie discovery for **Stremio and Nuvio**. Nuvio documents support f
 - Catalog discovery from configurable Stremio-compatible add-ons (defaults: Indian Regional Catalog and IndiaStreams); normalized movie cards and posters are sourced from upstream catalog responses.
 - Legal-source registry with strict URL/host validation and explicit source review status.
 - Subtitle resource endpoint (empty until licensed/authorized subtitle records are curated).
+- Automatic "New Releases" feed (first catalog, used for the home hero): newest movies from all categories, refreshed from upstream every 10 minutes.
 - Catalog pagination for Stremio-style `skip` requests.
 - Protocol-neutral JSON endpoints for health and catalog discovery.
 - Automated unit tests and GitHub Actions CI.

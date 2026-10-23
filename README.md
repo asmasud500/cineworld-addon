@@ -8,7 +8,7 @@ Legal-first movie discovery for **Stremio and Nuvio**. Nuvio documents support f
 
 - Stremio-compatible manifest and movie catalog endpoint (also intended for Nuvio's Stremio-protocol add-on support).
 - International category catalog (Bangladesh/West Bengal Bengali, Bollywood, Tamil, Telugu, Malayalam, Kannada, Pakistani, Nepali, Sri Lankan, Hollywood, Korean, Chinese, Japanese, and world cinema).
-- Catalog discovery from configurable Stremio-compatible add-ons (default: IndiaStreams); normalized movie cards and posters are sourced from upstream catalog responses.
+- Catalog discovery from configurable Stremio-compatible add-ons (defaults: Indian Regional Catalog and IndiaStreams); normalized movie cards and posters are sourced from upstream catalog responses.
 - Legal-source registry with strict URL/host validation and explicit source review status.
 - Subtitle resource endpoint (empty until licensed/authorized subtitle records are curated).
 - Catalog pagination for Stremio-style `skip` requests.
@@ -55,7 +55,7 @@ Nuvio documentation describes add-ons as HTTP services that publish a manifest a
 
 ## Deployment
 
-Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT` and `PUBLIC_BASE_URL`. Set `UPSTREAM_CATALOG_ADDONS` in your host environment to choose the upstream catalog manifests (comma-separated HTTPS URLs). Use HTTPS in production and configure the host health check against `/api/health`. Do not store secrets in source control. Do not store secrets in source control.
+Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT` and `PUBLIC_BASE_URL`. Set `UPSTREAM_CATALOG_ADDONS` in your host environment to choose the upstream catalog manifests (comma-separated HTTPS URLs). Use HTTPS in production and configure the host health check against `/api/health`. Do not store secrets in source control.
 
 ## Roadmap
 

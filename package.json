@@ -2,7 +2,7 @@
   "name": "cineworld-addon",
   "version": "0.1.0",
   "private": false,
-  "description": "A legal-first, automated cinema catalog add-on for Stremio, with a protocol-neutral catalog API for Nuvio integration validation.",
+  "description": "Legal-first movie catalog add-on for Stremio and Nuvio",
   "type": "module",
   "engines": {
     "node": ">=20"

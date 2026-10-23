@@ -3,7 +3,7 @@ import stremioAddonSdk from "stremio-addon-sdk";
 const { addonBuilder, getRouter } = stremioAddonSdk as typeof import("stremio-addon-sdk");
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
-import { getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus } from "./providers/upstream.js";
+import { getRememberedMovie, getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus, warmSeenMovies } from "./providers/upstream.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
@@ -22,7 +22,6 @@ const manifest = {
     name: category.name,
     extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
   })),
-  idPrefixes: ["tt"],
   behaviorHints: { configurable: false, configurationRequired: false }
 };
 
@@ -40,6 +39,10 @@ function toMetaPreview(movie: Movie) {
   };
 }
 
+function toMeta(movie: Movie) {
+  return { ...toMetaPreview(movie), ...(movie.imdbId ? { imdb_id: movie.imdbId } : {}), ...(movie.poster ? { background: movie.poster } : {}) };
+}
+
 function categoryIdFrom(value: string): CinemaCategoryId {
   return CINEMA_CATEGORIES.some((category) => category.id === value) ? value as CinemaCategoryId : "world";
 }
@@ -55,11 +58,19 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
 });
 
 builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => {
-  const local = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
-  if (local) return { meta: toMetaPreview(local) };
   if (type !== "movie") return { meta: null };
+  const local = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
+  if (local) return { meta: toMeta(local) };
+  // 1) Anything we already listed in a catalog is answered directly.
+  const seen = getRememberedMovie(id);
+  if (seen) return { meta: toMeta(seen) };
+  // 2) Ask the upstream add-ons for details.
   const remote = await getUpstreamMeta(id, type);
-  return { meta: remote ? toMetaPreview(remote) : null };
+  if (remote) return { meta: toMeta(remote) };
+  // 3) Cold start: rebuild the remembered set from the catalogs and try again.
+  await warmSeenMovies(CINEMA_CATEGORIES.map((category) => category.id));
+  const warmed = getRememberedMovie(id);
+  return { meta: warmed ? toMeta(warmed) : null };
 });
 
 builder.defineSubtitlesHandler(() => Promise.resolve({ subtitles: [] }));

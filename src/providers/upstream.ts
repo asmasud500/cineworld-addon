@@ -3,6 +3,30 @@ import type { CinemaCategoryId, Movie } from "../catalog.js";
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const cache = new Map<string, { expiresAt: number; value: unknown }>();
 
+// Every movie we have shown in a catalog is remembered here, so a later `meta`
+// request for the same id can be answered without depending on the upstream
+// add-on being reachable (cold start, timeout, redirect, etc.).
+const SEEN_LIMIT = 5000;
+const seenMovies = new Map<string, Movie>();
+
+export function rememberMovies(movies: Movie[]): void {
+  for (const movie of movies) {
+    for (const key of new Set([movie.id, movie.imdbId].filter((k): k is string => Boolean(k)))) {
+      seenMovies.delete(key);
+      seenMovies.set(key, movie);
+    }
+  }
+  while (seenMovies.size > SEEN_LIMIT) {
+    const oldest = seenMovies.keys().next().value;
+    if (oldest === undefined) break;
+    seenMovies.delete(oldest);
+  }
+}
+
+export function getRememberedMovie(id: string): Movie | null {
+  return seenMovies.get(id) ?? null;
+}
+
 type UpstreamCatalog = { type?: string; id?: string; name?: string; extra?: Array<{ name?: string }> };
 type UpstreamManifest = { id?: string; name?: string; resources?: Array<string | { name?: string }>; types?: string[]; catalogs?: UpstreamCatalog[] };
 type UpstreamMeta = { id?: string; type?: string; name?: string; description?: string; releaseInfo?: string; genres?: string[]; poster?: string; imdb_id?: string; imdbId?: string };
@@ -34,7 +58,7 @@ async function fetchJson<T>(url: URL): Promise<T | null> {
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.value as T;
   try {
-    const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
+    const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
     if (!response.ok) return null;
     const value = await response.json() as T;
     if (cache.size > 300) cache.clear();
@@ -115,7 +139,9 @@ export async function getUpstreamCatalog(categoryId: CinemaCategoryId, skip = 0,
   }
   const unique = new Map<string, Movie>();
   for (const movie of all) unique.set(movie.imdbId ?? movie.id, movie);
-  return [...unique.values()].slice(0, 100);
+  const result = [...unique.values()].slice(0, 100);
+  rememberMovies(result);
+  return result;
 }
 
 export async function getUpstreamMeta(id: string, type: string): Promise<Movie | null> {
@@ -133,18 +159,27 @@ export async function getUpstreamMeta(id: string, type: string): Promise<Movie |
     const response = await fetchJson<{ meta?: UpstreamMeta }>(endpoint);
     if (response?.meta) {
       const movie = normalize(response.meta, "world");
-      if (movie) return movie;
+      if (movie) { rememberMovies([movie]); return movie; }
     }
   }
   return null;
 }
 
 
+/**
+ * After a restart (e.g. a free-tier host waking up) the remembered set is empty.
+ * Re-run the category catalogs so an id the client already has on screen can be resolved.
+ */
+export async function warmSeenMovies(categoryIds: readonly CinemaCategoryId[]): Promise<void> {
+  await Promise.allSettled(categoryIds.map((categoryId) => getUpstreamCatalog(categoryId)));
+}
+
 /** Non-sensitive diagnostics for the health endpoint; never expose configured URLs. */
-export function getUpstreamSourceStatus(): { playbackSources: string; upstreamCatalogAddonsConfigured: number; upstreamCacheEntries: number } {
+export function getUpstreamSourceStatus(): { playbackSources: string; upstreamCatalogAddonsConfigured: number; upstreamCacheEntries: number; rememberedMovies: number } {
   return {
     playbackSources: "reviewed-only",
     upstreamCatalogAddonsConfigured: ADDON_URLS.filter((value) => safeManifestUrl(value) !== null).length,
-    upstreamCacheEntries: cache.size
+    upstreamCacheEntries: cache.size,
+    rememberedMovies: seenMovies.size
   };
 }

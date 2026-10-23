@@ -8,7 +8,10 @@ type UpstreamManifest = { id?: string; name?: string; resources?: Array<string |
 type UpstreamMeta = { id?: string; type?: string; name?: string; description?: string; releaseInfo?: string; genres?: string[]; poster?: string; imdb_id?: string; imdbId?: string };
 type CatalogResponse = { metas?: UpstreamMeta[] };
 
-const DEFAULT_ADDONS = ["https://indiastreams.rdata.in/manifest.json"];
+const DEFAULT_ADDONS = [
+  "https://83e20802dcf1-indian-streams.baby-beamup.club/manifest.json",
+  "https://indiastreams.rdata.in/manifest.json"
+];
 const ADDON_URLS = (process.env.UPSTREAM_CATALOG_ADDONS ?? DEFAULT_ADDONS.join(","))
   .split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -26,7 +29,7 @@ async function fetchJson<T>(url: URL): Promise<T | null> {
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.value as T;
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
+    const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
     if (!response.ok) return null;
     const value = await response.json() as T;
     if (cache.size > 300) cache.clear();
@@ -37,13 +40,13 @@ async function fetchJson<T>(url: URL): Promise<T | null> {
 
 function categoryTerms(categoryId: CinemaCategoryId): string[] {
   const terms: Record<CinemaCategoryId, string[]> = {
-    "bd-bengali": ["bangla", "bengali", "regional"],
-    "in-bengali": ["bengali", "bangla", "regional"],
-    bollywood: ["bollywood", "hindi", "popular movies", "trending movies"],
-    tamil: ["tamil", "regional"],
-    telugu: ["telugu", "regional"],
-    malayalam: ["malayalam", "regional"],
-    kannada: ["kannada", "regional"],
+    "bd-bengali": ["bengali", "bangla", "bn"],
+    "in-bengali": ["bengali", "bangla", "bn"],
+    bollywood: ["bollywood", "hindi", "hi"],
+    tamil: ["tamil", "ta"],
+    telugu: ["telugu", "te"],
+    malayalam: ["malayalam", "ml"],
+    kannada: ["kannada", "kn"],
     pakistani: ["pakistan", "pakistani", "urdu"],
     nepali: ["nepali", "nepal"],
     "sri-lankan": ["sri lanka", "sri-lankan", "sinhala"],
@@ -51,7 +54,7 @@ function categoryTerms(categoryId: CinemaCategoryId): string[] {
     korean: ["korean", "k-drama"],
     chinese: ["chinese", "mandarin"],
     japanese: ["japanese", "japan"],
-    world: ["world", "trending movies", "popular movies", "recommended movies"]
+    world: ["world cinema", "trending movies", "popular movies", "recommended movies", "ott releases"]
   };
   return terms[categoryId];
 }

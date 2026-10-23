@@ -1,10 +1,9 @@
-import { createServer } from "node:http";
-import { addonBuilder, serveHTTP } from "stremio-addon-sdk";
+import express from "express";
+import { addonBuilder, getRouter } from "stremio-addon-sdk";
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
-const apiPort = Number.parseInt(process.env.API_PORT ?? String(port + 1), 10);
 const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 
 const manifest = {
@@ -67,29 +66,25 @@ builder.defineStreamHandler(({ id }: { id: string }) => {
 });
 
 const addonInterface = builder.getInterface();
-const apiServer = createServer((req, res) => {
-  if (req.url === "/api/health") {
-    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ status: "ok", service: "cineworld-addon", version: manifest.version, playbackSources: "reviewed-only" }));
-    return;
-  }
-  if (req.url === "/api/catalog") {
-    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*" });
-    res.end(JSON.stringify({ categories: CINEMA_CATEGORIES, movies: getCatalog() }));
-    return;
-  }
-  res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify({ error: "not_found" }));
+const app = express();
+app.disable("x-powered-by");
+app.use((req, res, next) => { res.setHeader("access-control-allow-origin", "*"); res.setHeader("access-control-allow-methods", "GET, OPTIONS"); res.setHeader("access-control-allow-headers", "content-type"); if (req.method === "OPTIONS") { res.status(204).end(); return; } next(); });
+app.use("/", getRouter(addonInterface));
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", service: "cineworld-addon", version: manifest.version, playbackSources: "reviewed-only" });
 });
+app.get("/api/catalog", (_req, res) => {
+  res.json({ categories: CINEMA_CATEGORIES, movies: getCatalog() });
+});
+app.use((_req, res) => { res.status(404).json({ error: "not_found" }); });
 
-serveHTTP(addonInterface, { port, hostname: "0.0.0.0" });
-apiServer.listen(apiPort, "0.0.0.0", () => {
-  console.log(JSON.stringify({ level: "info", event: "server_started", port, apiPort, publicBaseUrl }));
+const server = app.listen(port, "0.0.0.0", () => {
+  console.log(JSON.stringify({ level: "info", event: "server_started", port, publicBaseUrl }));
 });
 
 function shutdown(signal: string) {
   console.log(JSON.stringify({ level: "info", event: "shutdown", signal }));
-  apiServer.close(() => process.exit(0));
+  server.close(() => process.exit(0));
 }
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));

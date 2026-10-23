@@ -2,7 +2,7 @@ import express from "express";
 import { addonBuilder, getRouter } from "stremio-addon-sdk";
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
-import { discoverTmdbMovies, getTmdbMovie, searchTmdbMovies } from "./providers/tmdb.js";
+import { discoverImdbMovies, getImdbMovie, searchImdbMovies } from "./providers/imdb.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
@@ -21,7 +21,7 @@ const manifest = {
     name: category.name,
     extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
   })),
-  idPrefixes: ["tt", "cineworld-"],
+  idPrefixes: ["tt"],
   behaviorHints: { configurable: false, configurationRequired: false }
 };
 
@@ -47,8 +47,8 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
   const skip = Math.max(0, Number.parseInt(extra?.skip ?? "0", 10) || 0);
   const categoryId = categoryIdFrom(id);
   const remote = extra?.search
-    ? await searchTmdbMovies(extra.search, categoryId)
-    : await discoverTmdbMovies(categoryId, skip);
+    ? await searchImdbMovies(extra.search, categoryId)
+    : await discoverImdbMovies(categoryId, skip);
   const local = extra?.search ? searchCatalog(extra.search) : getCatalog(id).slice(skip, skip + 100);
   const unique = new Map<string, Movie>();
   for (const movie of [...local, ...remote]) unique.set(movie.imdbId ?? movie.id, movie);
@@ -59,7 +59,7 @@ builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => 
   const local = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
   if (local) return { meta: toMetaPreview(local) };
   if (type !== "movie") return { meta: null };
-  const remote = await getTmdbMovie(id);
+  const remote = await getImdbMovie(id);
   return { meta: remote ? toMetaPreview(remote) : null };
 });
 

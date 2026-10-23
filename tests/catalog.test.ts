@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "../src/catalog.js";
 import { validateLegalSource, type LegalSource } from "../src/sources.js";
-import { normalizeTmdbMovie } from "../src/providers/tmdb.js";
+import { normalizeTmdbMovie, searchTmdbMovies } from "../src/providers/tmdb.js";
 
 describe("cinema catalog", () => {
   it("includes the requested South Asian and global categories", () => {
@@ -66,5 +66,52 @@ describe("TMDB metadata normalization", () => {
     expect(movie.poster).toBe("https://image.tmdb.org/t/p/w500/poster.jpg");
     expect(movie.genres).toEqual(["Drama"]);
     expect(movie.sourceIds).toEqual([]);
+  });
+});
+
+
+describe("TMDB provider resilience", () => {
+  it("caches successful metadata responses for repeated searches", async () => {
+    const originalKey = process.env.TMDB_API_KEY;
+    process.env.TMDB_API_KEY = "test-key";
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      results: [{
+        id: 987654321,
+        title: "Cache Test Film",
+        overview: "A fixture used to test caching.",
+        release_date: "2025-01-02",
+        poster_path: null,
+        genre_ids: [18]
+      }]
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      const uniqueQuery = `cineworld-cache-test-${Date.now()}`;
+      const first = await searchTmdbMovies(uniqueQuery);
+      const second = await searchTmdbMovies(uniqueQuery);
+      expect(first).toEqual(second);
+      expect(first[0]?.name).toBe("Cache Test Film");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalKey === undefined) delete process.env.TMDB_API_KEY;
+      else process.env.TMDB_API_KEY = originalKey;
+    }
+  });
+
+  it("fails closed when TMDB credentials are not configured", async () => {
+    const originalKey = process.env.TMDB_API_KEY;
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn();
+    delete process.env.TMDB_API_KEY;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      expect(await searchTmdbMovies("credential-free-query")).toEqual([]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalKey !== undefined) process.env.TMDB_API_KEY = originalKey;
+    }
   });
 });

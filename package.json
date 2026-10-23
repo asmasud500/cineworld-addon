@@ -1,0 +1,28 @@
+{
+  "name": "cineworld-addon",
+  "version": "0.1.0",
+  "private": false,
+  "description": "A legal-first, automated cinema catalog add-on for Stremio, with a protocol-neutral catalog API for Nuvio integration validation.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run build && npm test"
+  },
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/express": "^5.0.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}

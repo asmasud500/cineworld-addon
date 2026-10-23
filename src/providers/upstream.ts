@@ -97,7 +97,10 @@ export async function getUpstreamCatalog(categoryId: CinemaCategoryId, skip = 0,
     if (!manifest || !Array.isArray(manifest.catalogs)) continue;
     const candidates = manifest.catalogs.filter((catalog) => catalogMatches(catalog, categoryId));
     for (const catalog of candidates.slice(0, 2)) {
-      const endpoint = new URL(`catalog/${encodeURIComponent(catalog.type ?? "movie")}/${encodeURIComponent(catalog.id ?? "")}.json`, manifestUrl);
+      // catalogMatches validates these fields at runtime, but TypeScript cannot
+      // infer that from a separate predicate function.
+      if (!catalog.id || !catalog.type) continue;
+      const endpoint = new URL(`catalog/${encodeURIComponent(catalog.type)}/${encodeURIComponent(catalog.id)}.json`, manifestUrl);
       if (search && catalog.extra?.some((extra) => extra.name === "search")) endpoint.searchParams.set("search", search.slice(0, 100));
       if (skip > 0) endpoint.searchParams.set("skip", String(Math.min(skip, 1000)));
       const response = await fetchJson<CatalogResponse>(endpoint);
@@ -133,3 +136,12 @@ export async function getUpstreamMeta(id: string, type: string): Promise<Movie |
   return null;
 }
 
+
+/** Non-sensitive diagnostics for the health endpoint; never expose configured URLs. */
+export function getUpstreamSourceStatus(): { playbackSources: string; upstreamCatalogAddonsConfigured: number; upstreamCacheEntries: number } {
+  return {
+    playbackSources: "reviewed-only",
+    upstreamCatalogAddonsConfigured: ADDON_URLS.filter((value) => safeManifestUrl(value) !== null).length,
+    upstreamCacheEntries: cache.size
+  };
+}

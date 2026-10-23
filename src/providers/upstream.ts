@@ -68,7 +68,7 @@ function catalogMatches(catalog: UpstreamCatalog, categoryId: CinemaCategoryId):
 function normalize(item: UpstreamMeta, categoryId: CinemaCategoryId): Movie | null {
   const id = item.id?.trim();
   const name = item.name?.trim();
-  if (!id || !name || item.type !== "movie") return null;
+  // Catalog endpoint is movie-scoped; some providers omit type on preview items.\n  if (!id || !name || (item.type && item.type !== "movie")) return null;
   const poster = item.poster && /^https:\/\//i.test(item.poster) ? item.poster : undefined;
   const imdbId = item.imdb_id ?? item.imdbId ?? (/^tt\d+$/.test(id) ? id : undefined);
   return {
@@ -107,23 +107,23 @@ export async function getUpstreamCatalog(categoryId: CinemaCategoryId, skip = 0,
 }
 
 export async function getUpstreamMeta(id: string, type: string): Promise<Movie | null> {
+  if (type !== "movie" || !id.trim()) return null;
   for (const rawUrl of ADDON_URLS) {
     const manifestUrl = safeManifestUrl(rawUrl);
     if (!manifestUrl) continue;
     const manifest = await fetchJson<UpstreamManifest>(manifestUrl);
-    if (!manifest || !Array.isArray(manifest.catalogs)) continue;
-    for (const catalog of manifest.catalogs.filter((c) => c.type === type && c.id)) {
-      const endpoint = new URL(`meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`, manifestUrl);
-      const response = await fetchJson<{ meta?: UpstreamMeta }>(endpoint);
-      if (response?.meta) {
-        const movie = normalize(response.meta, "world");
-        if (movie) return movie;
-      }
+    if (!manifest || !Array.isArray(manifest.resources)) continue;
+    const supportsMeta = manifest.resources.some((resource) =>
+      typeof resource === "string" ? resource === "meta" : resource?.name === "meta"
+    );
+    if (!supportsMeta) continue;
+    const endpoint = new URL(`meta/movie/${encodeURIComponent(id)}.json`, manifestUrl);
+    const response = await fetchJson<{ meta?: UpstreamMeta }>(endpoint);
+    if (response?.meta) {
+      const movie = normalize(response.meta, "world");
+      if (movie) return movie;
     }
   }
   return null;
 }
 
-export function getUpstreamSourceStatus() {
-  return { configuredAddons: ADDON_URLS.length, source: "Stremio-compatible catalog add-ons", playback: "reviewed-only" };
-}

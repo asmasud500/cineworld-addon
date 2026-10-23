@@ -62,7 +62,7 @@ function categoryTerms(categoryId: CinemaCategoryId): string[] {
 function catalogMatches(catalog: UpstreamCatalog, categoryId: CinemaCategoryId): boolean {
   if (catalog.type !== "movie" || !catalog.id) return false;
   const haystack = `${catalog.id} ${catalog.name ?? ""}`.toLocaleLowerCase();
-  return categoryTerms(categoryId).some((term) => haystack.includes(term));
+  return categoryTerms(categoryId).some((term) => term.length <= 3 ? catalog.id.toLocaleLowerCase() === term : haystack.includes(term));
 }
 
 function normalize(item: UpstreamMeta, categoryId: CinemaCategoryId): Movie | null {

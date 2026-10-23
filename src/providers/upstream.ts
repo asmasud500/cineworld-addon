@@ -65,9 +65,12 @@ function categoryTerms(categoryId: CinemaCategoryId): string[] {
 }
 
 function catalogMatches(catalog: UpstreamCatalog, categoryId: CinemaCategoryId): boolean {
-  if (catalog.type !== "movie" || !catalog.id) return false;
-  const haystack = `${catalog.id} ${catalog.name ?? ""}`.toLocaleLowerCase();
-  return categoryTerms(categoryId).some((term) => term.length <= 3 ? catalog.id.toLocaleLowerCase() === term : haystack.includes(term));
+  const id = catalog.id;
+  if (catalog.type !== "movie" || typeof id !== "string" || !id) return false;
+  const haystack = `${id} ${catalog.name ?? ""}`.toLocaleLowerCase();
+  return categoryTerms(categoryId).some((term) =>
+    term.length <= 3 ? id.toLocaleLowerCase() === term : haystack.includes(term)
+  );
 }
 
 function normalize(item: UpstreamMeta, categoryId: CinemaCategoryId): Movie | null {

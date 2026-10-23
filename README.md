@@ -1,14 +1,16 @@
 # CineWorld Advanced Movie Add-on
 
-Legal-first movie discovery for **Stremio**, with a small protocol-neutral JSON API intended to help validate a future **Nuvio adapter**.
+Legal-first movie discovery for **Stremio and Nuvio**. Nuvio documents support for the Stremio add-on protocol, so the same manifest and resource endpoints are intended to work in both clients.
 
 > **Important:** CineWorld only returns playback links that are explicitly reviewed and allowlisted in the source registry. A catalog entry or metadata record is not proof that a film is legally streamable. No scraping of paywalled services, DRM bypass, or unauthorized stream aggregation is implemented.
 
 ## Current MVP
 
-- Stremio manifest and movie catalog endpoint.
+- Stremio-compatible manifest and movie catalog endpoint (also intended for Nuvio's Stremio-protocol add-on support).
 - Curated international category catalog (Bangladesh/West Bengal Bengali, Bollywood, Tamil, Telugu, Malayalam, Kannada, Pakistani, Nepali, Sri Lankan, Hollywood, Korean, Chinese, Japanese, and world cinema).
 - Legal-source registry with strict URL/host validation and explicit source review status.
+- Subtitle resource endpoint (empty until licensed/authorized subtitle records are curated).
+- Catalog pagination for Stremio-style `skip` requests.
 - Protocol-neutral JSON endpoints for health and catalog discovery.
 - Automated unit tests and GitHub Actions CI.
 - No database or cache is required for the initial local run.
@@ -42,7 +44,7 @@ Never add arbitrary user-provided URLs to playback responses. The validator acce
 
 ## Nuvio compatibility status
 
-The JSON catalog API is a neutral integration seam, **not a claim that CineWorld is already a native Nuvio add-on**. Nuvio's current extension/adapter contract must be confirmed against its official documentation and tested against a real Nuvio client before advertising native compatibility. Keep any Nuvio-specific adapter isolated from the Stremio manifest and handlers.
+Nuvio documentation describes add-ons as HTTP services that publish a manifest and respond to catalog, metadata, stream, and subtitle requests using the Stremio add-on protocol. CineWorld therefore uses the shared protocol rather than inventing a separate adapter. Real-client compatibility still needs an install/playback smoke test once a public HTTPS deployment exists.
 
 ## Deployment
 
@@ -50,7 +52,7 @@ Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `POR
 
 ## Roadmap
 
-1. Confirm Nuvio's supported extension protocol and build a dedicated adapter.
+1. Deploy over public HTTPS and smoke-test installation in both Stremio and Nuvio.
 2. Add a reviewed public-domain/licensed source registry and evidence fields.
 3. Add persistent metadata storage, Redis caching, scheduled refresh, and an admin control center.
 4. Add integration tests against real Stremio and Nuvio clients.

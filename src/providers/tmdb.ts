@@ -2,6 +2,8 @@ import type { CinemaCategoryId, Movie } from "../catalog.js";
 
 const TMDB_API = "https://api.themoviedb.org/3";
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
+const CACHE_TTL_MS = 15 * 60 * 1000;
+const RESPONSE_CACHE = new Map<string, { expiresAt: number; value: unknown }>();
 
 interface TmdbMovie {
   id: number;
@@ -67,10 +69,20 @@ async function tmdbRequest<T>(path: string, params: Record<string, string>): Pro
   const url = new URL(`${TMDB_API}${path}`);
   url.searchParams.set("api_key", apiKey);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  const cacheKey = url.toString();
+  const cached = RESPONSE_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value as T;
+  if (cached) RESPONSE_CACHE.delete(cacheKey);
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(7000) });
     if (!response.ok) return null;
-    return await response.json() as T;
+    const value = await response.json() as T;
+    if (RESPONSE_CACHE.size >= 500) {
+      const oldestKey = RESPONSE_CACHE.keys().next().value;
+      if (oldestKey) RESPONSE_CACHE.delete(oldestKey);
+    }
+    RESPONSE_CACHE.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+    return value;
   } catch {
     return null;
   }

@@ -79,7 +79,7 @@ function categoryTerms(categoryId: CinemaCategoryId): string[] {
     pakistani: ["pakistan", "pakistani", "urdu"],
     nepali: ["nepali", "nepal"],
     "sri-lankan": ["sri lanka", "sri-lankan", "sinhala"],
-    hollywood: ["hollywood", "english", "trending movies"],
+    hollywood: ["hollywood", "english"],
     korean: ["korean", "k-drama"],
     chinese: ["chinese", "mandarin"],
     japanese: ["japanese", "japan"],

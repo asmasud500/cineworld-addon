@@ -129,3 +129,46 @@ export async function getTmdbNewReleases(categoryId: CinemaCategoryId, skip = 0)
   rememberMovies(clean);
   return clean;
 }
+
+/**
+ * Strict category check for movies that come from the upstream add-ons.
+ * Upstream catalogs only say "Bengali" or "trending", so a film could land in the wrong row
+ * (e.g. West Bengal films under Bangladesh). With a TMDB key each film is looked up by its IMDb id
+ * and kept only if its original language (and origin country, where the category has one) matches.
+ * Anything that cannot be verified is dropped instead of guessed. "World Cinema" is not filtered.
+ */
+export async function verifyForCategory(movies: Movie[], categoryId: CinemaCategoryId, maxChecked = 30, budgetMs = 6000): Promise<Movie[]> {
+  const filter = CATEGORY_FILTERS[categoryId];
+  if (!filter.language && !filter.country) return movies;
+  if (!isTmdbConfigured()) {
+    // Without TMDB we cannot tell Bangladesh from West Bengal, so show it only in the West Bengal row.
+    return categoryId === "bd-bengali" ? [] : movies;
+  }
+  const candidates = movies.slice(0, maxChecked);
+  const verdicts = new Array<boolean>(candidates.length).fill(false);
+  const deadline = Date.now() + budgetMs;
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < candidates.length && Date.now() < deadline) {
+      const index = next++;
+      verdicts[index] = await matchesCategory(candidates[index]!, filter);
+    }
+  }
+  await Promise.all(Array.from({ length: 8 }, worker));
+  return candidates.filter((_, index) => verdicts[index]);
+}
+
+async function matchesCategory(movie: Movie, filter: Filter): Promise<boolean> {
+  const imdbId = movie.imdbId;
+  if (!imdbId) return false;
+  const found = await tmdbGet<{ movie_results?: Array<{ id: number; original_language?: string }> }>(
+    `find/${imdbId}`, { external_source: "imdb_id" }, EXTERNAL_ID_TTL_MS);
+  const match = found?.movie_results?.[0];
+  if (!match) return false;
+  if (filter.language && match.original_language !== filter.language) return false;
+  if (!filter.country) return true;
+  const details = await tmdbGet<{ origin_country?: string[]; production_countries?: Array<{ iso_3166_1?: string }> }>(
+    `movie/${match.id}`, {}, EXTERNAL_ID_TTL_MS);
+  const countries = details?.origin_country ?? details?.production_countries?.map((c) => c.iso_3166_1 ?? "") ?? [];
+  return countries.includes(filter.country);
+}

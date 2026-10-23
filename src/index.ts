@@ -4,7 +4,7 @@ const { addonBuilder, getRouter } = stremioAddonSdk as typeof import("stremio-ad
 import { CINEMA_CATEGORIES, FEATURED_CATALOG_ID, FEATURED_CATALOG_NAME, buildFeaturedFeed, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
 import { getRememberedMovie, getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus, warmSeenMovies } from "./providers/upstream.js";
-import { getTmdbNewReleases, isTmdbConfigured } from "./providers/tmdb.js";
+import { getTmdbNewReleases, isTmdbConfigured, verifyForCategory } from "./providers/tmdb.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
@@ -12,7 +12,7 @@ const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.3.0",
+  version: "0.3.1",
   name: "CineWorld",
   description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Playback is shown only for reviewed rights-cleared sources.",
   resources: ["catalog", "meta", "stream", "subtitles"],
@@ -59,7 +59,7 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
     // Automatic feed: newest movies across every category, refreshed from upstream (10 min cache).
     const lists = await Promise.all(CINEMA_CATEGORIES.flatMap((category) => [
       getTmdbNewReleases(category.id).catch(() => [] as Movie[]),
-      getUpstreamCatalog(category.id).catch(() => [] as Movie[])
+      getUpstreamCatalog(category.id).then((list) => verifyForCategory(list, category.id, 12)).catch(() => [] as Movie[])
     ]));
     const feed = buildFeaturedFeed([getCatalog(), ...lists]);
     return { metas: feed.slice(skip, skip + 100).map(toMetaPreview) };
@@ -67,7 +67,7 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
   const categoryId = categoryIdFrom(id);
   const [fresh, upstream] = await Promise.all([
     extra?.search ? Promise.resolve([] as Movie[]) : getTmdbNewReleases(categoryId, skip).catch(() => [] as Movie[]),
-    getUpstreamCatalog(categoryId, skip, extra?.search)
+    getUpstreamCatalog(categoryId, skip, extra?.search).then((list) => verifyForCategory(list, categoryId)).catch(() => [] as Movie[])
   ]);
   const remote = [...fresh, ...upstream]; // brand-new releases first
   const local = extra?.search ? searchCatalog(extra.search) : getCatalog(id).slice(skip, skip + 100);

@@ -48,6 +48,10 @@ CineWorld reads public Stremio-compatible catalog add-on manifests and catalog r
 
 Set `TMDB_API_KEY` (free v3 key from themoviedb.org) or `TMDB_READ_ACCESS_TOKEN`. CineWorld then asks TMDB for films released in the last 180 days, per category (language/country filters), newest first, and puts them at the front of every category and of the **New Releases** hero catalog. New films appear as soon as TMDB lists them (10 minute cache, no redeploy needed). IMDb ids are resolved so other Stremio/Nuvio stream add-ons can match the film; brand-new films without an IMDb id yet use a `tmdb:<id>` id. This is metadata only: no playback links are created. Without a key the feature is simply off.
 
+### Strict categories
+
+Each category row shows only films that really belong to it. Films from the upstream add-ons are checked against TMDB by IMDb id (original language, plus origin country for Bangladesh / West Bengal / Hollywood) and dropped if they do not match or cannot be verified. Without a TMDB key, ambiguous Bengali films are hidden from the Bangladesh row. "World Cinema" is intentionally unfiltered.
+
 ## Legal playback policy
 
 A source must be added to `src/sources.ts` only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. Metadata-provider results are for discovery only and never create playback links. The catalog deliberately has **no titles or playback streams by default** until verified metadata and source rights are curated. This avoids implying that a film is public domain merely because it is old or appears on an archive.

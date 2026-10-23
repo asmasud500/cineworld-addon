@@ -3,7 +3,7 @@ import stremioAddonSdk from "stremio-addon-sdk";
 const { addonBuilder, getRouter } = stremioAddonSdk as typeof import("stremio-addon-sdk");
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
-import { discoverImdbMovies, getImdbMovie, searchImdbMovies } from "./providers/imdb.js";
+import { getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus } from "./providers/upstream.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
@@ -13,7 +13,7 @@ const manifest = {
   id: "org.cineworld.legal-cinema",
   version: "0.1.0",
   name: "CineWorld",
-  description: "Legal-first international cinema discovery. Playback is shown only for reviewed rights-cleared sources.",
+  description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Playback is shown only for reviewed rights-cleared sources.",
   resources: ["catalog", "meta", "stream", "subtitles"],
   types: ["movie"],
   catalogs: CINEMA_CATEGORIES.map((category) => ({
@@ -47,9 +47,7 @@ function categoryIdFrom(value: string): CinemaCategoryId {
 builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { search?: string; skip?: string } }) => {
   const skip = Math.max(0, Number.parseInt(extra?.skip ?? "0", 10) || 0);
   const categoryId = categoryIdFrom(id);
-  const remote = extra?.search
-    ? await searchImdbMovies(extra.search, categoryId)
-    : await discoverImdbMovies(categoryId, skip);
+  const remote = await getUpstreamCatalog(categoryId, skip, extra?.search);
   const local = extra?.search ? searchCatalog(extra.search) : getCatalog(id).slice(skip, skip + 100);
   const unique = new Map<string, Movie>();
   for (const movie of [...local, ...remote]) unique.set(movie.imdbId ?? movie.id, movie);
@@ -60,7 +58,7 @@ builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => 
   const local = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
   if (local) return { meta: toMetaPreview(local) };
   if (type !== "movie") return { meta: null };
-  const remote = await getImdbMovie(id);
+  const remote = await getUpstreamMeta(id, type);
   return { meta: remote ? toMetaPreview(remote) : null };
 });
 
@@ -81,7 +79,7 @@ const app = express();
 app.disable("x-powered-by");
 app.use((req, res, next) => { res.setHeader("access-control-allow-origin", "*"); res.setHeader("access-control-allow-methods", "GET, OPTIONS"); res.setHeader("access-control-allow-headers", "content-type"); if (req.method === "OPTIONS") { res.status(204).end(); return; } next(); });
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", service: "cineworld-addon", version: manifest.version, playbackSources: "reviewed-only" });
+  res.json({ status: "ok", service: "cineworld-addon", version: manifest.version, ...getUpstreamSourceStatus() });
 });
 app.get("/api/catalog", (_req, res) => {
   res.json({ categories: CINEMA_CATEGORIES, movies: getCatalog() });

@@ -4,6 +4,7 @@ import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
+const apiPort = Number.parseInt(process.env.API_PORT ?? String(port + 1), 10);
 const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 
 const manifest = {
@@ -62,7 +63,7 @@ builder.defineStreamHandler(({ id }: { id: string }) => {
 });
 
 const addonInterface = builder.getInterface();
-const server = createServer((req, res) => {
+const apiServer = createServer((req, res) => {
   if (req.url === "/api/health") {
     res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ status: "ok", service: "cineworld-addon", version: manifest.version, playbackSources: "reviewed-only" }));
@@ -73,19 +74,18 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify({ categories: CINEMA_CATEGORIES, movies: getCatalog() }));
     return;
   }
-  serveHTTP(addonInterface, { port, hostname: "127.0.0.1" });
-  // The SDK server owns its own listener; this outer server is only used for neutral JSON endpoints.
-  res.writeHead(302, { location: `${publicBaseUrl}/manifest.json` });
-  res.end();
+  res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify({ error: "not_found" }));
 });
 
-server.listen(port, () => {
-  console.log(JSON.stringify({ level: "info", event: "server_started", port, publicBaseUrl }));
+serveHTTP(addonInterface, { port, hostname: "0.0.0.0" });
+apiServer.listen(apiPort, "0.0.0.0", () => {
+  console.log(JSON.stringify({ level: "info", event: "server_started", port, apiPort, publicBaseUrl }));
 });
 
 function shutdown(signal: string) {
   console.log(JSON.stringify({ level: "info", event: "shutdown", signal }));
-  server.close(() => process.exit(0));
+  apiServer.close(() => process.exit(0));
 }
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));

@@ -11,6 +11,8 @@ export interface LegalSource {
   reviewedAt?: string;
 }
 
+const ALLOWED_PLAYBACK_HOSTS = new Set(["archive.org", "www.archive.org", "upload.wikimedia.org", "commons.wikimedia.org"]);
+
 const ALLOWED_LICENSES = new Set<LegalSource["license"]>([
   "public-domain", "cc0", "cc-by", "cc-by-sa", "licensed"
 ]);
@@ -33,6 +35,9 @@ export function validateLegalSource(source: LegalSource): { valid: boolean; reas
   if (parsed.username || parsed.password) return { valid: false, reason: "Credentials in playback URLs are forbidden." };
   if (!source.host || parsed.hostname.toLowerCase() !== source.host.toLowerCase()) {
     return { valid: false, reason: "Declared host does not match the playback URL." };
+  }
+  if (!ALLOWED_PLAYBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
+    return { valid: false, reason: "Playback host is not on CineWorld’s reviewed host allowlist." };
   }
   if (!ALLOWED_LICENSES.has(source.license)) return { valid: false, reason: "Unsupported license label." };
   if (!source.reviewed || !source.reviewedAt) return { valid: false, reason: "Source has not been reviewed and dated." };

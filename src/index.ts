@@ -2,6 +2,8 @@ import express from "express";
 import { addonBuilder, getRouter } from "stremio-addon-sdk";
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
+import { discoverTmdbMovies, getTmdbMovie, searchTmdbMovies } from "./providers/tmdb.js";
+import type { CinemaCategoryId, Movie } from "./catalog.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
 const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
@@ -25,11 +27,8 @@ const manifest = {
 
 const builder = addonBuilder(manifest as any);
 
-builder.defineCatalogHandler(({ id, extra }: { id: string; extra?: { search?: string } }) => {
-  const results = extra?.search ? searchCatalog(extra.search) : getCatalog(id);
-  const skip = Math.max(0, Number.parseInt((extra as { skip?: string } | undefined)?.skip ?? "0", 10) || 0);
-  const page = results.slice(skip, skip + 100);
-  return Promise.resolve({ metas: page.map((movie) => ({
+function toMetaPreview(movie: Movie) {
+  return {
     id: movie.imdbId ?? movie.id,
     type: movie.type,
     name: movie.name,
@@ -37,21 +36,31 @@ builder.defineCatalogHandler(({ id, extra }: { id: string; extra?: { search?: st
     releaseInfo: movie.releaseInfo,
     genres: movie.genres,
     poster: movie.poster
-  })) });
+  };
+}
+
+function categoryIdFrom(value: string): CinemaCategoryId {
+  return CINEMA_CATEGORIES.some((category) => category.id === value) ? value as CinemaCategoryId : "world";
+}
+
+builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { search?: string; skip?: string } }) => {
+  const skip = Math.max(0, Number.parseInt(extra?.skip ?? "0", 10) || 0);
+  const categoryId = categoryIdFrom(id);
+  const remote = extra?.search
+    ? await searchTmdbMovies(extra.search, categoryId)
+    : await discoverTmdbMovies(categoryId, skip);
+  const local = extra?.search ? searchCatalog(extra.search) : getCatalog(id).slice(skip, skip + 100);
+  const unique = new Map<string, Movie>();
+  for (const movie of [...local, ...remote]) unique.set(movie.imdbId ?? movie.id, movie);
+  return { metas: [...unique.values()].slice(0, 100).map(toMetaPreview) };
 });
 
-builder.defineMetaHandler(({ type, id }: { type: string; id: string }) => {
-  const movie = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
-  if (!movie) return Promise.resolve({ meta: null });
-  return Promise.resolve({ meta: {
-    id: movie.imdbId ?? movie.id,
-    type: movie.type,
-    name: movie.name,
-    description: movie.description,
-    releaseInfo: movie.releaseInfo,
-    genres: movie.genres,
-    poster: movie.poster
-  } });
+builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => {
+  const local = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
+  if (local) return { meta: toMetaPreview(local) };
+  if (type !== "movie") return { meta: null };
+  const remote = await getTmdbMovie(id);
+  return { meta: remote ? toMetaPreview(remote) : null };
 });
 
 builder.defineSubtitlesHandler(() => Promise.resolve({ subtitles: [] }));

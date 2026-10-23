@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "../src/catalog.js";
 import { validateLegalSource, type LegalSource } from "../src/sources.js";
-import { normalizeTmdbMovie, searchTmdbMovies } from "../src/providers/tmdb.js";
+import { normalizeImdbMovie, searchImdbMovies } from "../src/providers/imdb.js";
 
 describe("cinema catalog", () => {
   it("includes the requested South Asian and global categories", () => {
@@ -51,67 +51,76 @@ describe("legal source validation", () => {
   });
 });
 
-describe("TMDB metadata normalization", () => {
-  it("normalizes provider data without treating metadata as playback rights", () => {
-    const movie = normalizeTmdbMovie({
-      id: 123,
-      title: "Example Film",
-      overview: "A test synopsis",
-      release_date: "2024-04-05",
-      poster_path: "/poster.jpg",
-      genre_ids: [18, 9999]
+describe("IMDb metadata normalization", () => {
+  it("normalizes IMDb IDs and metadata without treating metadata as playback rights", () => {
+    const movie = normalizeImdbMovie({
+      imdbID: "tt1234567",
+      Title: "Example Film",
+      Plot: "A test synopsis",
+      Year: "2024",
+      Poster: "https://example.com/poster.jpg",
+      Genre: "Drama, Mystery",
+      Type: "movie"
     }, "bd-bengali");
-    expect(movie.id).toBe("cineworld-tmdb-123");
-    expect(movie.releaseInfo).toBe("2024");
-    expect(movie.poster).toBe("https://image.tmdb.org/t/p/w500/poster.jpg");
-    expect(movie.genres).toEqual(["Drama"]);
-    expect(movie.sourceIds).toEqual([]);
+    expect(movie?.id).toBe("tt1234567");
+    expect(movie?.imdbId).toBe("tt1234567");
+    expect(movie?.releaseInfo).toBe("2024");
+    expect(movie?.poster).toBe("https://example.com/poster.jpg");
+    expect(movie?.genres).toEqual(["Drama", "Mystery"]);
+    expect(movie?.sourceIds).toEqual([]);
+  });
+
+  it("rejects records without valid IMDb IDs and placeholder posters", () => {
+    expect(normalizeImdbMovie({ Title: "No IMDb ID" }, "world")).toBeNull();
+    const movie = normalizeImdbMovie({ imdbID: "tt7654321", Title: "No Poster", Poster: "N/A" }, "world");
+    expect(movie?.poster).toBeUndefined();
   });
 });
 
-
-describe("TMDB provider resilience", () => {
+describe("IMDb provider resilience", () => {
   it("caches successful metadata responses for repeated searches", async () => {
-    const originalKey = process.env.TMDB_API_KEY;
-    process.env.TMDB_API_KEY = "test-key";
+    const originalKey = process.env.OMDB_API_KEY;
+    process.env.OMDB_API_KEY = "test-key";
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      results: [{
-        id: 987654321,
-        title: "Cache Test Film",
-        overview: "A fixture used to test caching.",
-        release_date: "2025-01-02",
-        poster_path: null,
-        genre_ids: [18]
+      Response: "True",
+      Search: [{
+        imdbID: "tt9876543",
+        Title: "Cache Test Film",
+        Plot: "A fixture used to test caching.",
+        Year: "2025",
+        Poster: "N/A",
+        Genre: "Drama",
+        Type: "movie"
       }]
     }), { status: 200, headers: { "content-type": "application/json" } }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     try {
       const uniqueQuery = `cineworld-cache-test-${Date.now()}`;
-      const first = await searchTmdbMovies(uniqueQuery);
-      const second = await searchTmdbMovies(uniqueQuery);
+      const first = await searchImdbMovies(uniqueQuery);
+      const second = await searchImdbMovies(uniqueQuery);
       expect(first).toEqual(second);
       expect(first[0]?.name).toBe("Cache Test Film");
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       globalThis.fetch = originalFetch;
-      if (originalKey === undefined) delete process.env.TMDB_API_KEY;
-      else process.env.TMDB_API_KEY = originalKey;
+      if (originalKey === undefined) delete process.env.OMDB_API_KEY;
+      else process.env.OMDB_API_KEY = originalKey;
     }
   });
 
-  it("fails closed when TMDB credentials are not configured", async () => {
-    const originalKey = process.env.TMDB_API_KEY;
+  it("fails closed when the OMDb API key is not configured", async () => {
+    const originalKey = process.env.OMDB_API_KEY;
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn();
-    delete process.env.TMDB_API_KEY;
+    delete process.env.OMDB_API_KEY;
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     try {
-      expect(await searchTmdbMovies("credential-free-query")).toEqual([]);
+      expect(await searchImdbMovies("credential-free-query")).toEqual([]);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       globalThis.fetch = originalFetch;
-      if (originalKey !== undefined) process.env.TMDB_API_KEY = originalKey;
+      if (originalKey !== undefined) process.env.OMDB_API_KEY = originalKey;
     }
   });
 });

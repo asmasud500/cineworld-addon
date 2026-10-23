@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cineworld-addon
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run check
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: PUBLIC_BASE_URL
+        sync: false

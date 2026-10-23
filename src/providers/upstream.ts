@@ -19,7 +19,12 @@ function safeManifestUrl(value: string): URL | null {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
-    if (url.hostname === "localhost" || url.hostname.endsWith(".local") || /^\d+(\.\d+){3}$/.test(url.hostname)) return null;
+    const host = url.hostname.toLowerCase();
+    if (
+      host === "localhost" || host.endsWith(".local") || host === "[::1]" ||
+      /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^\d+(\.\d+){3}$/.test(host)
+    ) return null;
     return url;
   } catch { return null; }
 }

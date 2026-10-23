@@ -31,18 +31,7 @@ export interface Movie {
   sourceIds: string[];
 }
 
-export const MOVIES: Movie[] = [
-  {
-    id: "cineworld-catalog-placeholder",
-    type: "movie",
-    name: "CineWorld Legal Catalog",
-    description: "A catalog placeholder. Reviewed legal titles will appear as verified metadata and playback sources are added.",
-    releaseInfo: "2026",
-    genres: ["World Cinema"],
-    categoryIds: ["world"],
-    sourceIds: []
-  }
-];
+export const MOVIES: Movie[] = [];
 
 export function getCatalog(categoryId?: string): Movie[] {
   if (!categoryId) return MOVIES;

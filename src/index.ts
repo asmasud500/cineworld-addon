@@ -1,5 +1,6 @@
 import express from "express";
-import { addonBuilder, getRouter } from "stremio-addon-sdk";
+import stremioAddonSdk from "stremio-addon-sdk";
+const { addonBuilder, getRouter } = stremioAddonSdk as typeof import("stremio-addon-sdk");
 import { CINEMA_CATEGORIES, getCatalog, searchCatalog } from "./catalog.js";
 import { getReviewedSources } from "./sources.js";
 import { discoverImdbMovies, getImdbMovie, searchImdbMovies } from "./providers/imdb.js";

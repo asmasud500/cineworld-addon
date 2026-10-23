@@ -12,7 +12,7 @@ const manifest = {
   version: "0.1.0",
   name: "CineWorld",
   description: "Legal-first international cinema discovery. Playback is shown only for reviewed rights-cleared sources.",
-  resources: ["catalog", "meta", "stream"],
+  resources: ["catalog", "meta", "stream", "subtitles"],
   types: ["movie"],
   catalogs: CINEMA_CATEGORIES.map((category) => ({
     type: "movie",
@@ -28,7 +28,9 @@ const builder = addonBuilder(manifest as any);
 
 builder.defineCatalogHandler(({ id, extra }: { id: string; extra?: { search?: string } }) => {
   const results = extra?.search ? searchCatalog(extra.search) : getCatalog(id);
-  return Promise.resolve({ metas: results.map((movie) => ({
+  const skip = Math.max(0, Number.parseInt((extra as { skip?: string } | undefined)?.skip ?? "0", 10) || 0);
+  const page = results.slice(skip, skip + 100);
+  return Promise.resolve({ metas: page.map((movie) => ({
     id: movie.imdbId ?? movie.id,
     type: movie.type,
     name: movie.name,
@@ -52,6 +54,8 @@ builder.defineMetaHandler(({ type, id }: { type: string; id: string }) => {
     poster: movie.poster
   } });
 });
+
+builder.defineSubtitlesHandler(() => Promise.resolve({ subtitles: [] }));
 
 builder.defineStreamHandler(({ id }: { id: string }) => {
   const sources = getReviewedSources(id);

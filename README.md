@@ -26,7 +26,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Open `http://localhost:7000/manifest.json` and `http://localhost:7000/api/health`.
+Open `http://localhost:7000/manifest.json` for Stremio and `http://localhost:7001/api/health` / `http://localhost:7001/api/catalog` for the protocol-neutral API. The API listens on `API_PORT` (default `PORT + 1`) because the SDK owns its own HTTP listener.
 
 Run checks:
 
@@ -46,7 +46,7 @@ The JSON catalog API is a neutral integration seam, **not a claim that CineWorld
 
 ## Deployment
 
-Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT` and `PUBLIC_BASE_URL`. Use HTTPS in production. Configure a health check against `/api/health`. Do not store secrets in source control.
+Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT`, `API_PORT`, and `PUBLIC_BASE_URL`. Expose both listeners or configure a reverse proxy that routes the Stremio manifest paths to the add-on listener and `/api/*` to the neutral API listener. Use HTTPS in production. Configure a health check against `/api/health` on the API listener. Do not store secrets in source control.
 
 ## Roadmap
 

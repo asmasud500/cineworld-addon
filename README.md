@@ -8,7 +8,7 @@ Legal-first movie discovery for **Stremio and Nuvio**. Nuvio documents support f
 
 - Stremio-compatible manifest and movie catalog endpoint (also intended for Nuvio's Stremio-protocol add-on support).
 - International category catalog (Bangladesh/West Bengal Bengali, Bollywood, Tamil, Telugu, Malayalam, Kannada, Pakistani, Nepali, Sri Lankan, Hollywood, Korean, Chinese, Japanese, and world cinema).
-- Optional TMDB-powered metadata discovery, search, posters, and details when `TMDB_API_KEY` is configured. TMDB metadata is never treated as proof of streaming rights.
+- Optional IMDb-linked metadata search, posters, and details through OMDb.com when `OMDB_API_KEY` is configured. IMDb metadata is never treated as proof of streaming rights.
 - Legal-source registry with strict URL/host validation and explicit source review status.
 - Subtitle resource endpoint (empty until licensed/authorized subtitle records are curated).
 - Catalog pagination for Stremio-style `skip` requests.
@@ -37,6 +37,12 @@ Run checks:
 npm run check
 ```
 
+## IMDb metadata setup
+
+IMDb does not offer a general free public REST API for this use. CineWorld therefore uses the OMDb API, which returns IMDb IDs and IMDb-linked movie metadata. Get an API key at [OMDb API](https://www.omdbapi.com/apikey.aspx), then set `OMDB_API_KEY` in `.env` locally or in your hosting provider's secret/environment settings. Never commit the key or paste it into public issues.
+
+OMDb supports title search and lookup by IMDb ID. Its public API does not provide reliable language/country discovery filters, so the category pages currently use best-effort title searches; they are not guaranteed language-specific catalogs. Exact title searches and `tt...` IMDb ID lookups are more reliable. Metadata is discovery-only and never creates playback links.
+
 ## Legal playback policy
 
 A source must be added to `src/sources.ts` only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. Metadata-provider results are for discovery only and never create playback links. The catalog deliberately has **no titles or playback streams by default** until verified metadata and source rights are curated. This avoids implying that a film is public domain merely because it is old or appears on an archive.
@@ -49,7 +55,7 @@ Nuvio documentation describes add-ons as HTTP services that publish a manifest a
 
 ## Deployment
 
-Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT` and `PUBLIC_BASE_URL`. Optionally set `TMDB_API_KEY` in your host's secret/environment settings to enable metadata discovery. Use HTTPS in production and configure the host health check against `/api/health`. Do not store secrets in source control. Do not store secrets in source control.
+Deploy on any Node.js 20+ host that supports a persistent HTTP process. Set `PORT` and `PUBLIC_BASE_URL`. Optionally set `OMDB_API_KEY` in your host's secret/environment settings to enable IMDb-linked metadata search and details. Use HTTPS in production and configure the host health check against `/api/health`. Do not store secrets in source control. Do not store secrets in source control.
 
 ## Roadmap
 

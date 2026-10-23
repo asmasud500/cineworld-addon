@@ -78,16 +78,19 @@ async function tmdbRequest<T>(path: string, params: Record<string, string>): Pro
 
 export async function discoverTmdbMovies(categoryId: CinemaCategoryId, skip = 0): Promise<Movie[]> {
   const filters = CATEGORY_FILTERS[categoryId] ?? {};
-  const page = Math.floor(Math.max(0, skip) / 20) + 1;
-  const params: Record<string, string> = {
-    include_adult: "false",
-    sort_by: "popularity.desc",
-    page: String(Math.min(page, 500))
-  };
-  if (filters.language) params.with_original_language = filters.language;
-  if (filters.region) params.region = filters.region;
-  const response = await tmdbRequest<TmdbResponse>("/discover/movie", params);
-  return (response?.results ?? []).map((movie) => normalizeTmdbMovie(movie, categoryId));
+  const firstPage = Math.floor(Math.max(0, skip) / 100) * 5 + 1;
+  const pages = await Promise.all(Array.from({ length: 5 }, async (_, index) => {
+    const params: Record<string, string> = {
+      include_adult: "false",
+      sort_by: "popularity.desc",
+      page: String(Math.min(firstPage + index, 500))
+    };
+    if (filters.language) params.with_original_language = filters.language;
+    if (filters.region) params.region = filters.region;
+    const response = await tmdbRequest<TmdbResponse>("/discover/movie", params);
+    return response?.results ?? [];
+  }));
+  return pages.flat().map((movie) => normalizeTmdbMovie(movie, categoryId));
 }
 
 export async function searchTmdbMovies(query: string, categoryId: CinemaCategoryId = "world"): Promise<Movie[]> {

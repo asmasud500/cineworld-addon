@@ -3,6 +3,8 @@ services:
     name: cineworld-addon
     runtime: node
     plan: free
+    branch: main
+    autoDeployTrigger: checksPass
     buildCommand: npm install && npm run check
     startCommand: npm start
     healthCheckPath: /api/health

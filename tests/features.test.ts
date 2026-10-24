@@ -434,10 +434,10 @@ describe("quality labels and automatic rights page", () => {
     expect(listed[0]?.territory).toEqual(["world"]);
   });
 
-  it("still refuses an unknown quality, other hosts, and links whose rights page cannot be worked out", () => {
+  it("refuses unknown quality and pages, while allowing direct HTTPS video URLs from other hosts without evidence", () => {
     const base = { movieId: "tt5", license: "public-domain", rightsConfirmed: true };
     expect(addLegalSource({ ...base, quality: "ultra", url: "https://archive.org/download/i/a.mp4" })).toMatchObject({ ok: false });
-    expect(addLegalSource({ ...base, url: "https://some-site.example/a.mp4" })).toMatchObject({ ok: false });
+    expect(addLegalSource({ ...base, url: "https://some-site.example/a.mp4" })).toMatchObject({ ok: true });
     expect(addLegalSource({ ...base, url: "https://archive.org/some/other/a.mp4" })).toMatchObject({ ok: false });
     expect(addLegalSource({ ...base, rightsConfirmed: false, url: "https://archive.org/download/i/a.mp4" })).toMatchObject({ ok: false });
   });
@@ -465,22 +465,22 @@ describe("all video file types and open-license hosts", () => {
   it("accepts archive.org download servers and Blender open movies, and finds their rights page", () => {
     const server = addLegalSource({ ...base, url: "https://ia801234.us.archive.org/12/items/item8/film.mkv" });
     expect(server).toMatchObject({ ok: true });
-    expect((server as { source: { rightsEvidenceUrl: string } }).source.rightsEvidenceUrl).toBe("https://archive.org/details/item8");
+    expect((server as { source: { rightsEvidenceUrl: string } }).source.rightsEvidenceUrl).toBe("");
     const blender = addLegalSource({ ...base, url: "https://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_1080p_h264.mov" });
     expect(blender).toMatchObject({ ok: true });
-    expect((blender as { source: { rightsEvidenceUrl: string } }).source.rightsEvidenceUrl).toBe("https://studio.blender.org/films/");
+    expect((blender as { source: { rightsEvidenceUrl: string } }).source.rightsEvidenceUrl).toBe("");
   });
 
-  it("does not let look-alike or unknown hosts through", () => {
+  it("host helper still identifies reviewed hosts, while source adding accepts valid external direct-video URLs", () => {
     for (const host of ["evilarchive.org", "archive.org.evil.example", "ia800.archive.org.evil.com", "archive.org.", "blender.org", "cdn.example.com", "127.0.0.1", "localhost"]) {
       expect(isReviewedHost(host), host).toBe(false);
-      expect(addLegalSource({ ...base, rightsEvidenceUrl: "https://archive.org/details/x", url: `https://${host}/a.mkv` }), host).toMatchObject({ ok: false });
+      expect(addLegalSource({ ...base, url: `https://${host}/a.mkv` }), host).toMatchObject({ ok: true });
     }
     expect(isReviewedHost("ARCHIVE.ORG")).toBe(true);
     expect(isReviewedHost(".archive.org")).toBe(false);
   });
 
-  it("an editor-supplied rights page is used for the record", () => {
+  it("an optional editor-supplied rights page is retained for the record", () => {
     const result = addLegalSource({ ...base, url: "https://archive.org/some/odd/path/film.mkv", rightsEvidenceUrl: "https://archive.org/details/odd" });
     expect(result).toMatchObject({ ok: true });
   });

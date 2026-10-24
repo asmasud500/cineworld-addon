@@ -41,23 +41,26 @@ function authorized(req: Request, res: Response): boolean {
 
 const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CineWorld admin</title>
 <style>
-:root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--txt:#eceff4;--mut:#9aa3b2;--acc:#4f9dff;--ok:#3ecf8e;--bad:#ff6b6b}
-*{box-sizing:border-box}body{font:16px/1.4 system-ui,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
-header{padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
-h1{font-size:18px;margin:0}h3{margin:0 0 6px}main{padding:12px 16px 80px;max-width:760px;margin:0 auto}
-#bar{margin-top:8px;padding:8px 10px;border:1px solid var(--acc);border-radius:10px;display:flex;gap:10px;align-items:center;background:#10233a}
-#bar .n{flex:1;min-width:0;overflow-wrap:anywhere}#bar b{color:var(--acc)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
-.tabs{display:flex;gap:6px;overflow-x:auto;margin:12px 0}.tabs button{flex:none}
-input,select,button,textarea{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:#11141a;color:var(--txt);width:100%}
-button{width:auto;cursor:pointer}button.pri{background:var(--acc);border-color:var(--acc);color:#04101f;font-weight:600}
-button.on{border-color:var(--acc);color:var(--acc)}button.del{color:var(--bad)}
-label{display:block;margin:10px 0 4px;color:var(--mut);font-size:14px}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.row>button{flex:none}
-.item{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}.item.sel{outline:2px solid var(--acc);outline-offset:-2px;border-radius:8px;padding-left:6px}
-.item .t{flex:1;min-width:0;overflow-wrap:anywhere}.mut{color:var(--mut);font-size:14px}.msg{margin:8px 0;min-height:1.2em}.ok{color:var(--ok)}.bad{color:var(--bad)}
-.chk{display:flex;gap:10px;align-items:flex-start;margin:12px 0}.chk input{width:auto;margin-top:4px}
-.hidden{display:none}img.pt{width:40px;height:60px;object-fit:cover;border-radius:6px;background:#222}
-.who{padding:8px 10px;border-radius:8px;background:#10233a;margin:8px 0}.who.none{background:#2a1a1a;color:var(--bad)}
+:root{color-scheme:dark;--bg:#0b1020;--panel:#111a2e;--panel2:#16223a;--line:#263653;--txt:#eef4ff;--mut:#9eacc5;--acc:#67a7ff;--acc2:#8c7bff;--ok:#4cdda0;--bad:#ff7185;--shadow:0 18px 50px #02061755}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:radial-gradient(ellipse at 10% 0%,#17284a 0,transparent 38%),var(--bg);color:var(--txt);min-height:100vh}
+header{padding:18px clamp(16px,4vw,40px);border-bottom:1px solid #ffffff12;position:sticky;top:0;background:#0b1020eF;backdrop-filter:blur(18px);z-index:20;display:flex;align-items:center;justify-content:space-between;gap:16px}
+h1{font-size:20px;letter-spacing:-.04em;margin:0;font-weight:800}h1:before{content:"CW";display:inline-grid;place-items:center;font-size:11px;letter-spacing:0;width:32px;height:32px;margin-right:10px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#071124;vertical-align:middle}
+h3{margin:0 0 8px;font-size:16px;letter-spacing:-.02em}main{padding:clamp(16px,3vw,32px);max-width:1160px;margin:0 auto}
+#bar{padding:9px 12px;border:1px solid #67a7ff55;border-radius:12px;display:flex;gap:10px;align-items:center;background:#15284a;max-width:540px}#bar .n{flex:1;min-width:0;overflow-wrap:anywhere;color:#cfe2ff}#bar b{color:var(--acc)}
+#app:not(.hidden){animation:enter .25s ease-out}@keyframes enter{from{opacity:.4;transform:translateY(5px)}to{opacity:1;transform:none}}
+.card{background:linear-gradient(145deg,#141e33f2,#10182af5);border:1px solid var(--line);border-radius:18px;padding:clamp(16px,2vw,24px);margin:16px 0;box-shadow:var(--shadow);min-width:0}
+#login{max-width:560px;margin:10vh auto}.tabs{display:flex;gap:8px;overflow-x:auto;margin:18px 0;padding:3px 1px 8px;scrollbar-width:thin}.tabs button{flex:none}
+input,select,button,textarea{font:inherit;padding:11px 13px;border-radius:11px;border:1px solid #30415f;background:#0b1325;color:var(--txt);width:100%;min-width:0;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px #67a7ff20}input::placeholder,textarea::placeholder{color:#657794}
+button{width:auto;cursor:pointer;font-weight:650;white-space:nowrap}button:hover{border-color:#7899c8;background:#1a2943}button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}button.pri{background:linear-gradient(135deg,#69b4ff,#8c8aff);border-color:transparent;color:#071225;font-weight:800}button.pri:hover{filter:brightness(1.08)}button.on{border-color:var(--acc);color:var(--acc);background:#172846}button.del{color:var(--bad);border-color:#743445;background:#281622}
+label{display:block;margin:13px 0 6px;color:#bac8df;font-size:13px;font-weight:650;letter-spacing:.01em}.row{display:flex;gap:10px;align-items:center}.row>*{flex:1}.row>button{flex:none}
+.item{display:flex;gap:12px;align-items:center;padding:13px 10px;border-bottom:1px solid #ffffff0d;min-width:0}.item:last-child{border:0}.item.sel{outline:2px solid var(--acc);outline-offset:-2px;border-radius:12px;background:#1b2b47}.item .t{flex:1;min-width:0;overflow-wrap:anywhere}
+.mut{color:var(--mut);font-size:13px}.msg{margin:10px 0;min-height:1.2em;overflow-wrap:anywhere}.ok{color:var(--ok)}.bad{color:var(--bad)}.chk{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:12px;border:1px solid #ffffff12;border-radius:12px;background:#ffffff04}.chk input{width:17px;height:17px;flex:none;margin-top:4px;accent-color:var(--acc)}.hidden{display:none!important}img.pt{width:48px;height:68px;object-fit:cover;border-radius:9px;background:#202b40;box-shadow:0 4px 12px #0004}
+.who{padding:12px 14px;border-radius:12px;background:#15284a;margin:10px 0;border:1px solid #67a7ff24}.who.none{background:#321923;color:var(--bad);border-color:#743445}
+#res,#slist,#ulist{margin-top:12px}textarea{resize:vertical;min-height:120px}small,.hint{color:var(--mut)}.tabs button{border-radius:999px;padding:9px 15px}
+@media(min-width:900px){main{padding-top:28px}#app{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 20px;align-items:start}#app>.card,#app>.tabs{grid-column:1/-1}#app>.card{margin:10px 0}#app>.card:nth-of-type(2){grid-column:1/-1}}
+@media(max-width:600px){header{align-items:flex-start;padding:14px 16px;flex-wrap:wrap}h1{font-size:18px}#bar{width:100%;max-width:none}main{padding:12px 12px 40px}.card{padding:15px;border-radius:15px;margin:12px 0}.row{align-items:stretch}.row>button{padding-inline:12px}.tabs{margin:12px 0}.item{align-items:flex-start}.item button{padding:8px 10px}input,select,textarea{font-size:16px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 </style></head><body>
 <header><h1>CineWorld admin</h1><div id="bar" class="hidden"><div class="n" id="barn"></div><button id="clr">Change</button></div></header>
 <main>

@@ -53,17 +53,31 @@ function safeManifestUrl(value: string): URL | null {
   } catch { return null; }
 }
 
+const MAX_REDIRECTS = 3;
+
 async function fetchJson<T>(url: URL): Promise<T | null> {
   const key = url.toString();
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.value as T;
   try {
-    const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
-    if (!response.ok) return null;
-    const value = await response.json() as T;
-    if (cache.size > 300) cache.clear();
-    cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
-    return value;
+    // Redirects are followed by hand so that every hop passes the same HTTPS / no-private-host check.
+    let current = url;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const response = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(5000), headers: { accept: "application/json" } });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        const next = location ? safeManifestUrl(new URL(location, current).toString()) : null;
+        if (!next) return null;
+        current = next;
+        continue;
+      }
+      if (!response.ok) return null;
+      const value = await response.json() as T;
+      if (cache.size > 300) cache.clear();
+      cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+      return value;
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -115,30 +129,35 @@ function normalize(item: UpstreamMeta, categoryId: CinemaCategoryId): Movie | nu
   };
 }
 
-export async function getUpstreamCatalog(categoryId: CinemaCategoryId, skip = 0, search?: string): Promise<Movie[]> {
-  const all: Movie[] = [];
-  for (const rawUrl of ADDON_URLS) {
-    const manifestUrl = safeManifestUrl(rawUrl);
-    if (!manifestUrl) continue;
-    const manifest = await fetchJson<UpstreamManifest>(manifestUrl);
-    if (!manifest || !Array.isArray(manifest.catalogs)) continue;
-    const candidates = manifest.catalogs.filter((catalog) => catalogMatches(catalog, categoryId));
-    for (const catalog of candidates.slice(0, 2)) {
-      // catalogMatches validates these fields at runtime, but TypeScript cannot
-      // infer that from a separate predicate function.
-      if (!catalog.id || !catalog.type) continue;
-      const endpoint = new URL(`catalog/${encodeURIComponent(catalog.type)}/${encodeURIComponent(catalog.id)}.json`, manifestUrl);
-      if (search && catalog.extra?.some((extra) => extra.name === "search")) endpoint.searchParams.set("search", search.slice(0, 100));
-      if (skip > 0) endpoint.searchParams.set("skip", String(Math.min(skip, 1000)));
-      const response = await fetchJson<CatalogResponse>(endpoint);
-      for (const item of response?.metas ?? []) {
-        const movie = normalize(item, categoryId);
-        if (movie && (!search || movie.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()))) all.push(movie);
-      }
+async function readAddonCatalogs(rawUrl: string, categoryId: CinemaCategoryId, skip: number, search?: string): Promise<Movie[]> {
+  const manifestUrl = safeManifestUrl(rawUrl);
+  if (!manifestUrl) return [];
+  const manifest = await fetchJson<UpstreamManifest>(manifestUrl);
+  if (!manifest || !Array.isArray(manifest.catalogs)) return [];
+  const candidates = manifest.catalogs.filter((catalog) => catalogMatches(catalog, categoryId)).slice(0, 2);
+  const pages = await Promise.all(candidates.map(async (catalog) => {
+    // catalogMatches validates these fields at runtime, but TypeScript cannot
+    // infer that from a separate predicate function.
+    if (!catalog.id || !catalog.type) return [] as Movie[];
+    const endpoint = new URL(`catalog/${encodeURIComponent(catalog.type)}/${encodeURIComponent(catalog.id)}.json`, manifestUrl);
+    if (search && catalog.extra?.some((extra) => extra.name === "search")) endpoint.searchParams.set("search", search.slice(0, 100));
+    if (skip > 0) endpoint.searchParams.set("skip", String(Math.min(skip, 1000)));
+    const response = await fetchJson<CatalogResponse>(endpoint);
+    const movies: Movie[] = [];
+    for (const item of response?.metas ?? []) {
+      const movie = normalize(item, categoryId);
+      if (movie && (!search || movie.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()))) movies.push(movie);
     }
-  }
+    return movies;
+  }));
+  return pages.flat();
+}
+
+export async function getUpstreamCatalog(categoryId: CinemaCategoryId, skip = 0, search?: string): Promise<Movie[]> {
+  // All configured add-ons are asked at the same time; their order is kept.
+  const perAddon = await Promise.all(ADDON_URLS.map((rawUrl) => readAddonCatalogs(rawUrl, categoryId, skip, search)));
   const unique = new Map<string, Movie>();
-  for (const movie of all) unique.set(movie.imdbId ?? movie.id, movie);
+  for (const movie of perAddon.flat()) unique.set(movie.imdbId ?? movie.id, movie);
   const result = [...unique.values()].slice(0, 100);
   rememberMovies(result);
   return result;

@@ -5,7 +5,7 @@ services:
     plan: free
     branch: main
     autoDeployTrigger: checksPass
-    buildCommand: npm install && npm run check
+    buildCommand: npm ci && npm run check
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:

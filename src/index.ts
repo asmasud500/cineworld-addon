@@ -12,7 +12,7 @@ const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.3.1",
+  version: "0.3.2",
   name: "CineWorld",
   description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Playback is shown only for reviewed rights-cleared sources.",
   resources: ["catalog", "meta", "stream", "subtitles"],
@@ -49,6 +49,44 @@ function toMeta(movie: Movie) {
   return { ...toMetaPreview(movie), ...(movie.imdbId ? { imdb_id: movie.imdbId } : {}), ...((movie.background ?? movie.poster) ? { background: movie.background ?? movie.poster } : {}) };
 }
 
+const FEED_TTL_MS = 10 * 60 * 1000;
+const FEED_EMPTY_TTL_MS = 60 * 1000;
+let feedCache: { expiresAt: number; movies: Movie[] } | null = null;
+let feedInFlight: Promise<Movie[]> | null = null;
+
+async function buildFeed(): Promise<Movie[]> {
+  const lists = await Promise.all(CINEMA_CATEGORIES.flatMap((category) => [
+    getTmdbNewReleases(category.id).catch(() => [] as Movie[]),
+    getUpstreamCatalog(category.id).then((list) => verifyForCategory(list, category.id, 12)).catch(() => [] as Movie[])
+  ]));
+  return buildFeaturedFeed([getCatalog(), ...lists]);
+}
+
+/** One shared, cached feed: concurrent requests reuse the same work, and a failed refresh keeps the last good feed. */
+async function getFeed(): Promise<Movie[]> {
+  if (feedCache && feedCache.expiresAt > Date.now()) return feedCache.movies;
+  feedInFlight ??= buildFeed().then((movies) => {
+    if (movies.length || !feedCache) feedCache = { movies, expiresAt: Date.now() + (movies.length ? FEED_TTL_MS : FEED_EMPTY_TTL_MS) };
+    return feedCache?.movies ?? movies;
+  }).finally(() => { feedInFlight = null; });
+  return feedInFlight;
+}
+
+const WARM_INTERVAL_MS = 5 * 60 * 1000;
+let warmInFlight: Promise<void> | null = null;
+let lastWarmAt = 0;
+
+/** Rebuilds the remembered-movie set after a restart; throttled so unknown ids cannot trigger it repeatedly. */
+async function warmCatalogs(): Promise<void> {
+  if (warmInFlight) return warmInFlight;
+  if (Date.now() - lastWarmAt < WARM_INTERVAL_MS) return;
+  const categoryIds = CINEMA_CATEGORIES.map((category) => category.id);
+  warmInFlight = Promise.allSettled([warmSeenMovies(categoryIds), ...categoryIds.map((categoryId) => getTmdbNewReleases(categoryId))])
+    .then(() => undefined)
+    .finally(() => { lastWarmAt = Date.now(); warmInFlight = null; });
+  return warmInFlight;
+}
+
 function categoryIdFrom(value: string): CinemaCategoryId {
   return CINEMA_CATEGORIES.some((category) => category.id === value) ? value as CinemaCategoryId : "world";
 }
@@ -56,12 +94,8 @@ function categoryIdFrom(value: string): CinemaCategoryId {
 builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { search?: string; skip?: string } }) => {
   const skip = Math.max(0, Number.parseInt(extra?.skip ?? "0", 10) || 0);
   if (id === FEATURED_CATALOG_ID) {
-    // Automatic feed: newest movies across every category, refreshed from upstream (10 min cache).
-    const lists = await Promise.all(CINEMA_CATEGORIES.flatMap((category) => [
-      getTmdbNewReleases(category.id).catch(() => [] as Movie[]),
-      getUpstreamCatalog(category.id).then((list) => verifyForCategory(list, category.id, 12)).catch(() => [] as Movie[])
-    ]));
-    const feed = buildFeaturedFeed([getCatalog(), ...lists]);
+    // Automatic feed: newest movies across every category (cached for 10 minutes).
+    const feed = await getFeed();
     return { metas: feed.slice(skip, skip + 100).map(toMetaPreview) };
   }
   const categoryId = categoryIdFrom(id);
@@ -77,7 +111,7 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
 });
 
 builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => {
-  if (type !== "movie") return { meta: null };
+  if (type !== "movie" || !id || id.length > 120) return { meta: null };
   const local = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
   if (local) return { meta: toMeta(local) };
   // 1) Anything we already listed in a catalog is answered directly.
@@ -87,8 +121,7 @@ builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => 
   const remote = await getUpstreamMeta(id, type);
   if (remote) return { meta: toMeta(remote) };
   // 3) Cold start: rebuild the remembered set from the catalogs and try again.
-  const categoryIds = CINEMA_CATEGORIES.map((category) => category.id);
-  await Promise.allSettled([warmSeenMovies(categoryIds), ...categoryIds.map((categoryId) => getTmdbNewReleases(categoryId))]);
+  await warmCatalogs();
   const warmed = getRememberedMovie(id);
   return { meta: warmed ? toMeta(warmed) : null };
 });
@@ -126,5 +159,12 @@ function shutdown(signal: string) {
   console.log(JSON.stringify({ level: "info", event: "shutdown", signal }));
   server.close(() => process.exit(0));
 }
+process.on("unhandledRejection", (reason) => {
+  console.error(JSON.stringify({ level: "error", event: "unhandled_rejection", reason: String(reason) }));
+});
+process.on("uncaughtException", (error) => {
+  console.error(JSON.stringify({ level: "error", event: "uncaught_exception", message: error.message }));
+  shutdown("uncaughtException");
+});
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));

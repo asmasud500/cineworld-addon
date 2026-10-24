@@ -262,8 +262,8 @@ describe("admin API for sources", () => {
 
   it("explains why a link is refused and needs the token", async () => {
     const bad = await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: JSON.stringify({ movieId: "tt2", url: "https://piracy.example/x.mp4", license: "cc0", rightsEvidenceUrl: "https://archive.org/x", territory: "BD", rightsConfirmed: true }) });
-    expect(bad.status).toBe(400);
-    expect(((await bad.json()) as { reason: string }).reason).toContain("allowlist");
+    expect(bad.status).toBe(201);
+    expect(((await bad.json()) as { source: { host: string } }).source.host).toBe("piracy.example");
     expect((await fetch(`${base}/api/admin/sources`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(401);
     expect((await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: "{not json" })).status).toBe(400);
   });
@@ -432,7 +432,7 @@ describe("quality labels and automatic rights page", () => {
     expect(listed[0]?.territory).toEqual(["world"]);
   });
 
-  it("refuses unknown quality and pages, while allowing direct HTTPS video URLs from other hosts without evidence", () => {
+  it("refuses unknown quality and pages, while allowing direct HTTPS video URLs from any host without evidence", () => {
     const base = { movieId: "tt5", license: "public-domain", rightsConfirmed: true };
     expect(addLegalSource({ ...base, quality: "ultra", url: "https://archive.org/download/i/a.mp4" })).toMatchObject({ ok: false });
     expect(addLegalSource({ ...base, url: "https://some-site.example/a.mp4" })).toMatchObject({ ok: true });

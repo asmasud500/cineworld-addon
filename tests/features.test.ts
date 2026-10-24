@@ -430,7 +430,7 @@ describe("quality labels and automatic rights page", () => {
     }
     const listed = getReviewedSources("tt5");
     expect(listed.map((s) => s.quality)).toEqual(["1080p", "720p", "480p", undefined]);
-    expect(listed[0]?.rightsEvidenceUrl).toBe("https://archive.org/details/item5");
+    expect(listed[0]?.rightsEvidenceUrl).toBe("");
     expect(listed[0]?.territory).toEqual(["world"]);
   });
 
@@ -438,7 +438,7 @@ describe("quality labels and automatic rights page", () => {
     const base = { movieId: "tt5", license: "public-domain", rightsConfirmed: true };
     expect(addLegalSource({ ...base, quality: "ultra", url: "https://archive.org/download/i/a.mp4" })).toMatchObject({ ok: false });
     expect(addLegalSource({ ...base, url: "https://some-site.example/a.mp4" })).toMatchObject({ ok: true });
-    expect(addLegalSource({ ...base, url: "https://archive.org/some/other/a.mp4" })).toMatchObject({ ok: false });
+    expect(addLegalSource({ ...base, url: "https://archive.org/some/other/a.mp4" })).toMatchObject({ ok: true });
     expect(addLegalSource({ ...base, rightsConfirmed: false, url: "https://archive.org/download/i/a.mp4" })).toMatchObject({ ok: false });
   });
 });

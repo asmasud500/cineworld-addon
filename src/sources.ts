@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { deriveEvidenceUrl } from "./evidence.js";
+import { REVIEWED_HOSTS_LABEL, isReviewedHost } from "./hosts.js";
 import { loadJson, saveJson } from "./jsonStore.js";
 
 export interface LegalSource {
@@ -17,14 +18,13 @@ export interface LegalSource {
   reviewedAt?: string;
 }
 
-const ALLOWED_PLAYBACK_HOSTS = new Set(["archive.org", "www.archive.org", "upload.wikimedia.org", "commons.wikimedia.org"]);
 
 const ALLOWED_LICENSES = new Set<LegalSource["license"]>([
   "public-domain", "cc0", "cc-by", "cc-by-sa", "licensed"
 ]);
 
 const SOURCES_FILE = process.env.SOURCES_FILE ?? "data/sources.json";
-const VIDEO_FILE = /\.(mp4|m4v|webm|mkv|ogv|mov|m3u8)$/i;
+const VIDEO_FILE = /\.(mp4|m4v|mkv|webm|ogv|mov|avi|wmv|flv|mpg|mpeg|ts|m2ts|mts|3gp|mpd|m3u8)$/i;
 const MAX_SOURCES = 2000;
 
 export const QUALITIES = ["4K", "1440p", "1080p", "720p", "480p", "360p", "240p", "Auto"] as const;
@@ -45,7 +45,7 @@ export function qualityRank(quality?: string): number {
   return index === -1 ? QUALITIES.length : index;
 }
 
-export const PLAYBACK_HOSTS: string[] = [...ALLOWED_PLAYBACK_HOSTS];
+export const PLAYBACK_HOSTS: string[] = [...REVIEWED_HOSTS_LABEL];
 
 /**
  * Empty until an editor verifies the film's rights and exact URL (admin panel or restore).
@@ -67,7 +67,7 @@ export function validateLegalSource(source: LegalSource): { valid: boolean; reas
   if (!source.host || parsed.hostname.toLowerCase() !== source.host.toLowerCase()) {
     return { valid: false, reason: "Declared host does not match the playback URL." };
   }
-  if (!ALLOWED_PLAYBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
+  if (!isReviewedHost(parsed.hostname)) {
     return { valid: false, reason: `Playback host is not on CineWorld's reviewed host allowlist (${PLAYBACK_HOSTS.join(", ")}).` };
   }
   if (!VIDEO_FILE.test(parsed.pathname)) return { valid: false, reason: "The URL must point directly to a video file (.mp4, .webm, .mkv, .m3u8 ...), not to a web page." };

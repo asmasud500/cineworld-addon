@@ -4,6 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { deriveEvidenceUrl } from "./evidence.js";
+import { REVIEWED_HOSTS_LABEL, isReviewedHost } from "./hosts.js";
 import { loadJson, saveJson } from "./jsonStore.js";
 
 export interface SubtitleRecord {
@@ -19,12 +20,11 @@ export interface SubtitleRecord {
   reviewedAt?: string;
 }
 
-const ALLOWED_SUBTITLE_HOSTS = new Set(["archive.org", "www.archive.org", "upload.wikimedia.org", "commons.wikimedia.org"]);
 const ALLOWED_LICENSES = new Set<SubtitleRecord["license"]>(["public-domain", "cc0", "cc-by", "cc-by-sa", "licensed"]);
 const SUBTITLE_FILE = /\.(srt|vtt)$/i;
 const SUBTITLES_FILE = process.env.SUBTITLES_FILE ?? "data/subtitles.json";
 const MAX_SUBTITLES = 2000;
-export const SUBTITLE_HOSTS: string[] = [...ALLOWED_SUBTITLE_HOSTS];
+export const SUBTITLE_HOSTS: string[] = [...REVIEWED_HOSTS_LABEL];
 
 /** Empty until an editor verifies the subtitle's rights and exact URL (admin panel or restore). */
 export const SUBTITLES: SubtitleRecord[] = [];
@@ -35,7 +35,7 @@ export function validateSubtitle(record: SubtitleRecord): { valid: boolean; reas
   if (parsed.protocol !== "https:") return { valid: false, reason: "Only HTTPS subtitle URLs are accepted." };
   if (parsed.username || parsed.password) return { valid: false, reason: "Credentials in subtitle URLs are forbidden." };
   if (!record.host || parsed.hostname.toLowerCase() !== record.host.toLowerCase()) return { valid: false, reason: "Declared host does not match the subtitle URL." };
-  if (!ALLOWED_SUBTITLE_HOSTS.has(parsed.hostname.toLowerCase())) return { valid: false, reason: `Subtitle host is not on the reviewed host allowlist (${SUBTITLE_HOSTS.join(", ")}).` };
+  if (!isReviewedHost(parsed.hostname)) return { valid: false, reason: `Subtitle host is not on the reviewed host allowlist (${SUBTITLE_HOSTS.join(", ")}).` };
   if (!SUBTITLE_FILE.test(parsed.pathname)) return { valid: false, reason: "Subtitle URL must point to an .srt or .vtt file." };
   if (!/^[a-z]{3}$/.test(record.lang)) return { valid: false, reason: "Language must be a three-letter ISO 639-2 code." };
   if (!ALLOWED_LICENSES.has(record.license)) return { valid: false, reason: "Unsupported license label." };

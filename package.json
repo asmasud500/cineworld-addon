@@ -1,6 +1,6 @@
 {
   "name": "cineworld-addon",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": false,
   "description": "Legal-first movie catalog add-on for Stremio and Nuvio",
   "type": "module",

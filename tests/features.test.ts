@@ -102,7 +102,7 @@ describe("pin and hide", () => {
 
 describe("subtitle registry", () => {
   const good: SubtitleRecord = { id: "s1", movieId: "tt1", lang: "ben", url: "https://archive.org/download/x/x.bn.srt", host: "archive.org", license: "public-domain", rightsEvidenceUrl: "https://archive.org/details/x", reviewed: true, reviewedAt: "2026-10-24" };
-  it("serves only reviewed records on allowlisted hosts", () => {
+  it("subtitle validation still rejects unreviewed and invalid hosts", () => {
     expect(validateSubtitle(good).valid).toBe(true);
     expect(getReviewedSubtitles("tt1", [good]).map((r) => r.id)).toEqual(["s1"]);
     expect(validateSubtitle({ ...good, host: "evil.example", url: "https://evil.example/a.srt" }).valid).toBe(false);

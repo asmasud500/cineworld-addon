@@ -207,13 +207,11 @@ describe("adding sources and subtitles from the panel", () => {
     expect(LEGAL_SOURCES).toHaveLength(0);
   });
 
-  it("refuses unconfirmed rights, unknown hosts, web pages instead of video files, and duplicates", () => {
+  it("refuses unconfirmed rights and web pages, while accepting direct video URLs from any HTTPS host", () => {
     expect(addLegalSource({ ...ok, rightsConfirmed: false })).toMatchObject({ ok: false });
-    const host = addLegalSource({ ...ok, url: "https://some-movie-site.example/film.mp4" });
-    expect(host).toMatchObject({ ok: false });
-    expect((host as { reason: string }).reason).toContain("allowlist");
+    const host = addLegalSource({ ...ok, url: "https://some-movie-site.example/film.mp4", rightsEvidenceUrl: "" });
+    expect(host).toMatchObject({ ok: true });
     expect(addLegalSource({ ...ok, url: "https://archive.org/details/x" })).toMatchObject({ ok: false });
-    expect(addLegalSource({ ...ok, rightsEvidenceUrl: "not a url" })).toMatchObject({ ok: false });
     expect(addLegalSource({ ...ok, license: "free-for-all" })).toMatchObject({ ok: false });
     expect(addLegalSource({ ...ok, movieId: "" })).toMatchObject({ ok: false });
     expect(addLegalSource(ok)).toMatchObject({ ok: true });
@@ -222,7 +220,7 @@ describe("adding sources and subtitles from the panel", () => {
 
   it("restore keeps only records that pass validation", () => {
     const good = (addLegalSource(ok) as { source: unknown }).source;
-    const bad = { ...(good as object), id: "bad", url: "https://evil.example/a.mp4", host: "evil.example" };
+    const bad = { ...(good as object), id: "bad", url: "not a url", host: "evil.example" };
     expect(replaceLegalSources([good, bad, "junk", null])).toBe(1);
     expect(LEGAL_SOURCES.map((s) => s.id)).toEqual([(good as { id: string }).id]);
   });
@@ -375,10 +373,10 @@ describe("admin: confirming a source places the film in the catalog", () => {
     expect(synced).toBe(1);
   });
 
-  it("a refused link does not touch the catalog; search results carry posters; config reports TMDB", async () => {
+  it("accepts an external direct video link; search results carry posters; config reports TMDB", async () => {
     const bad = await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: JSON.stringify({ movieId: "tmdb:5", url: "https://piracy.example/x.mp4", license: "cc0", rightsEvidenceUrl: "https://archive.org/x", territory: "BD", rightsConfirmed: true }) });
-    expect(bad.status).toBe(400);
-    expect(placed).toEqual([]);
+    expect(bad.status).toBe(201);
+    expect(placed).toEqual(["tmdb:5"]);
     const search = await (await fetch(`${base}/api/admin/search?q=poster`, { headers })).json() as { movies: Array<{ poster: string }> };
     expect(search.movies[0]?.poster).toContain("image.tmdb.org");
     expect(((await (await fetch(`${base}/api/admin/config`, { headers })).json()) as { tmdb: boolean }).tmdb).toBe(true);

@@ -3,6 +3,7 @@
  * checked the rights. Subtitle files from unverified or scraped sources are never served.
  */
 import { randomUUID } from "node:crypto";
+import { deriveEvidenceUrl } from "./evidence.js";
 import { loadJson, saveJson } from "./jsonStore.js";
 
 export interface SubtitleRecord {
@@ -66,7 +67,7 @@ export function addSubtitle(input: NewSubtitleInput): { ok: true; record: Subtit
   const record: SubtitleRecord = {
     id: randomUUID(), movieId, lang: text(input.lang, 3).toLowerCase(), url, host,
     license: text(input.license, 20) as SubtitleRecord["license"],
-    rightsEvidenceUrl: text(input.rightsEvidenceUrl, 2000),
+    rightsEvidenceUrl: text(input.rightsEvidenceUrl, 2000) || deriveEvidenceUrl(url) || "",
     reviewed: true, reviewedAt: new Date().toISOString().slice(0, 10)
   };
   const check = validateSubtitle(record);

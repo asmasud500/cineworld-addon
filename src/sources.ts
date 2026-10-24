@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { deriveEvidenceUrl } from "./evidence.js";
 import { loadJson, saveJson } from "./jsonStore.js";
 
 export interface LegalSource {
@@ -10,6 +11,8 @@ export interface LegalSource {
   license: "public-domain" | "cc0" | "cc-by" | "cc-by-sa" | "licensed";
   rightsEvidenceUrl: string;
   territory: string[];
+  /** Optional quality label shown to viewers, best first: 4K, 1440p, 1080p, 720p, 480p, 360p, 240p, Auto. */
+  quality?: string;
   reviewed: boolean;
   reviewedAt?: string;
 }
@@ -23,6 +26,24 @@ const ALLOWED_LICENSES = new Set<LegalSource["license"]>([
 const SOURCES_FILE = process.env.SOURCES_FILE ?? "data/sources.json";
 const VIDEO_FILE = /\.(mp4|m4v|webm|mkv|ogv|mov|m3u8)$/i;
 const MAX_SOURCES = 2000;
+
+export const QUALITIES = ["4K", "1440p", "1080p", "720p", "480p", "360p", "240p", "Auto"] as const;
+
+/** "1080", "1080P", "uhd", "2160p", "hls" ... -> a standard label, "" for no quality, null when unknown. */
+export function normalizeQuality(value: unknown): string | null {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!raw) return "";
+  if (["4k", "uhd", "2160", "2160p"].includes(raw)) return "4K";
+  if (["auto", "hls", "m3u8", "adaptive"].includes(raw)) return "Auto";
+  const match = raw.match(/^(\d{3,4})p?$/);
+  const label = match ? `${match[1]}p` : "";
+  return (QUALITIES as readonly string[]).includes(label) ? label : null;
+}
+
+export function qualityRank(quality?: string): number {
+  const index = (QUALITIES as readonly string[]).indexOf(quality ?? "");
+  return index === -1 ? QUALITIES.length : index;
+}
 
 export const PLAYBACK_HOSTS: string[] = [...ALLOWED_PLAYBACK_HOSTS];
 
@@ -51,6 +72,7 @@ export function validateLegalSource(source: LegalSource): { valid: boolean; reas
   }
   if (!VIDEO_FILE.test(parsed.pathname)) return { valid: false, reason: "The URL must point directly to a video file (.mp4, .webm, .mkv, .m3u8 ...), not to a web page." };
   if (!ALLOWED_LICENSES.has(source.license)) return { valid: false, reason: "Unsupported license label." };
+  if (source.quality !== undefined && !(QUALITIES as readonly string[]).includes(source.quality)) return { valid: false, reason: `Quality must be one of ${QUALITIES.join(", ")}.` };
   if (!source.reviewed || !source.reviewedAt) return { valid: false, reason: "Source has not been reviewed and dated." };
 
   let evidence: URL;
@@ -66,12 +88,14 @@ export function validateLegalSource(source: LegalSource): { valid: boolean; reas
 }
 
 export function getReviewedSources(movieId: string): LegalSource[] {
-  return LEGAL_SOURCES.filter((source) => source.movieId === movieId && validateLegalSource(source).valid);
+  return LEGAL_SOURCES
+    .filter((source) => source.movieId === movieId && validateLegalSource(source).valid)
+    .sort((a, b) => qualityRank(a.quality) - qualityRank(b.quality)); // best quality first
 }
 
 export interface NewSourceInput {
   movieId?: unknown; title?: unknown; url?: unknown; license?: unknown;
-  rightsEvidenceUrl?: unknown; territory?: unknown; rightsConfirmed?: unknown;
+  rightsEvidenceUrl?: unknown; territory?: unknown; quality?: unknown; rightsConfirmed?: unknown;
 }
 
 const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
@@ -88,11 +112,18 @@ export function addLegalSource(input: NewSourceInput): { ok: true; source: Legal
   try { host = new URL(url).hostname.toLowerCase(); } catch { return { ok: false, reason: "The video URL is not valid." }; }
   const territory = (Array.isArray(input.territory) ? input.territory : text(input.territory, 200).split(","))
     .map((item) => text(item, 20)).filter(Boolean).slice(0, 20);
+  const quality = normalizeQuality(input.quality);
+  if (quality === null) return { ok: false, reason: `Quality must be one of ${QUALITIES.join(", ")}.` };
+  // The rights page is worked out from the link itself unless the editor supplies one.
+  const evidence = text(input.rightsEvidenceUrl, 2000) || deriveEvidenceUrl(url) || "";
+  if (!evidence) return { ok: false, reason: "Use a direct archive.org /download/... or Wikimedia upload link." };
   const source: LegalSource = {
     id: randomUUID(), movieId, title: text(input.title, 80) || "Source", url, host,
     license: text(input.license, 20) as LegalSource["license"],
-    rightsEvidenceUrl: text(input.rightsEvidenceUrl, 2000),
-    territory, reviewed: true, reviewedAt: new Date().toISOString().slice(0, 10)
+    rightsEvidenceUrl: evidence,
+    territory: territory.length ? territory : ["world"],
+    ...(quality ? { quality } : {}),
+    reviewed: true, reviewedAt: new Date().toISOString().slice(0, 10)
   };
   const check = validateLegalSource(source);
   if (!check.valid) return { ok: false, reason: check.reason ?? "Invalid source." };

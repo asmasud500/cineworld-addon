@@ -394,3 +394,51 @@ describe("admin: confirming a source places the film in the catalog", () => {
     replaceCurated([]);
   });
 });
+
+import { deriveEvidenceUrl } from "../src/evidence.js";
+import { normalizeQuality, qualityRank } from "../src/sources.js";
+
+describe("quality labels and automatic rights page", () => {
+  afterEach(() => { replaceLegalSources([]); });
+
+  it("normalizes quality labels", () => {
+    expect(normalizeQuality("1080")).toBe("1080p");
+    expect(normalizeQuality("720P")).toBe("720p");
+    expect(normalizeQuality("UHD")).toBe("4K");
+    expect(normalizeQuality("2160p")).toBe("4K");
+    expect(normalizeQuality("hls")).toBe("Auto");
+    expect(normalizeQuality("")).toBe("");
+    expect(normalizeQuality(undefined)).toBe("");
+    expect(normalizeQuality("999p")).toBeNull();
+    expect(normalizeQuality("hd-ultra")).toBeNull();
+    expect(qualityRank("4K")).toBeLessThan(qualityRank("720p"));
+    expect(qualityRank(undefined)).toBeGreaterThan(qualityRank("Auto"));
+  });
+
+  it("works out the rights page from archive.org and Wikimedia links", () => {
+    expect(deriveEvidenceUrl("https://archive.org/download/my-film_1950/my%20film.mp4")).toBe("https://archive.org/details/my-film_1950");
+    expect(deriveEvidenceUrl("https://upload.wikimedia.org/wikipedia/commons/a/ab/Old_Film.ogv")).toBe("https://commons.wikimedia.org/wiki/File:Old_Film.ogv");
+    expect(deriveEvidenceUrl("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Old_Film.ogv/320px-Old_Film.ogv.jpg")).toBe("https://commons.wikimedia.org/wiki/File:Old_Film.ogv");
+    expect(deriveEvidenceUrl("https://archive.org/details/x")).toBeNull();
+    expect(deriveEvidenceUrl("not a url")).toBeNull();
+  });
+
+  it("adds several qualities without a rights page and lists the best first", () => {
+    const base = { movieId: "tt5", license: "public-domain", rightsConfirmed: true };
+    for (const [quality, file] of [["480p", "a.480.mp4"], ["1080", "a.1080.mp4"], ["", "a.mp4"], ["720p", "a.720.mp4"]] as const) {
+      expect(addLegalSource({ ...base, quality, url: `https://archive.org/download/item5/${file}` })).toMatchObject({ ok: true });
+    }
+    const listed = getReviewedSources("tt5");
+    expect(listed.map((s) => s.quality)).toEqual(["1080p", "720p", "480p", undefined]);
+    expect(listed[0]?.rightsEvidenceUrl).toBe("https://archive.org/details/item5");
+    expect(listed[0]?.territory).toEqual(["world"]);
+  });
+
+  it("still refuses an unknown quality, other hosts, and links whose rights page cannot be worked out", () => {
+    const base = { movieId: "tt5", license: "public-domain", rightsConfirmed: true };
+    expect(addLegalSource({ ...base, quality: "ultra", url: "https://archive.org/download/i/a.mp4" })).toMatchObject({ ok: false });
+    expect(addLegalSource({ ...base, url: "https://some-site.example/a.mp4" })).toMatchObject({ ok: false });
+    expect(addLegalSource({ ...base, url: "https://archive.org/some/other/a.mp4" })).toMatchObject({ ok: false });
+    expect(addLegalSource({ ...base, rightsConfirmed: false, url: "https://archive.org/download/i/a.mp4" })).toMatchObject({ ok: false });
+  });
+});

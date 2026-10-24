@@ -43,45 +43,48 @@ const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta n
 <style>
 :root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--txt:#eceff4;--mut:#9aa3b2;--acc:#4f9dff;--ok:#3ecf8e;--bad:#ff6b6b}
 *{box-sizing:border-box}body{font:16px/1.4 system-ui,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
-header{padding:14px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
-h1{font-size:18px;margin:0}main{padding:12px 16px 80px;max-width:760px;margin:0 auto}
+header{padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
+h1{font-size:18px;margin:0}h3{margin:0 0 6px}main{padding:12px 16px 80px;max-width:760px;margin:0 auto}
+#bar{margin-top:8px;padding:8px 10px;border:1px solid var(--acc);border-radius:10px;display:flex;gap:10px;align-items:center;background:#10233a}
+#bar .n{flex:1;min-width:0;overflow-wrap:anywhere}#bar b{color:var(--acc)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
 .tabs{display:flex;gap:6px;overflow-x:auto;margin:12px 0}.tabs button{flex:none}
 input,select,button,textarea{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:#11141a;color:var(--txt);width:100%}
 button{width:auto;cursor:pointer}button.pri{background:var(--acc);border-color:var(--acc);color:#04101f;font-weight:600}
 button.on{border-color:var(--acc);color:var(--acc)}button.del{color:var(--bad)}
 label{display:block;margin:10px 0 4px;color:var(--mut);font-size:14px}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.row>button{flex:none}
-.item{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}
+.item{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}.item.sel{outline:2px solid var(--acc);outline-offset:-2px;border-radius:8px;padding-left:6px}
 .item .t{flex:1;min-width:0;overflow-wrap:anywhere}.mut{color:var(--mut);font-size:14px}.msg{margin:8px 0;min-height:1.2em}.ok{color:var(--ok)}.bad{color:var(--bad)}
-.p{color:#6cf}.h{color:var(--bad)}.chk{display:flex;gap:10px;align-items:flex-start;margin:12px 0}.chk input{width:auto;margin-top:4px}
-.hidden{display:none}#sel{margin-top:8px}img.pt{width:40px;height:60px;object-fit:cover;border-radius:6px;background:#222}
+.chk{display:flex;gap:10px;align-items:flex-start;margin:12px 0}.chk input{width:auto;margin-top:4px}
+.hidden{display:none}img.pt{width:40px;height:60px;object-fit:cover;border-radius:6px;background:#222}
+.who{padding:8px 10px;border-radius:8px;background:#10233a;margin:8px 0}.who.none{background:#2a1a1a;color:var(--bad)}
 </style></head><body>
-<header><h1>CineWorld admin</h1></header>
+<header><h1>CineWorld admin</h1><div id="bar" class="hidden"><div class="n" id="barn"></div><button id="clr">Change</button></div></header>
 <main>
 <div class="card" id="login"><label for="tok">Admin token</label><div class="row"><input id="tok" type="password" autocomplete="off"><button class="pri" id="go">Open</button></div><div class="msg bad" id="lmsg"></div></div>
 <div id="app" class="hidden">
  <div class="card hidden bad" id="tmdbwarn">TMDB is not connected (set TMDB_API_KEY on the host). Search will find nothing and added films cannot be placed in the catalog.</div>
- <div class="card"><label for="q">Find a movie</label><div class="row"><input id="q" placeholder="Movie name"><button id="find">Search</button></div>
-  <div id="res"></div><div id="sel" class="mut">No movie chosen.</div></div>
+ <div class="card"><label for="q">1. Find a movie</label><div class="row"><input id="q" placeholder="Movie name"><button class="pri" id="find">Search</button></div>
+  <div id="res"></div></div>
  <div class="tabs"><button data-tab="movies" class="on">Movies</button><button data-tab="sources">Sources</button><button data-tab="subs">Subtitles</button><button data-tab="backup">Backup</button></div>
- <section id="movies"><div class="card"><div class="mut">Pin = show first. Hide = remove everywhere. Pick a movie to use it for a source.</div><div id="feed"></div></div></section>
- <section id="sources" class="hidden"><div class="card"><h3>Add a video link</h3>
+ <section id="movies"><div class="card"><div class="mut">Pin = show first. Hide = remove everywhere. "Use" picks the movie for adding a source.</div><div id="feed"></div></div></section>
+ <section id="sources" class="hidden"><div class="card" id="sform"><h3>2. Add video links</h3>
+  <div class="who none" id="who1">No movie chosen yet. Search above and press Choose.</div>
   <div class="mut" id="shosts"></div>
-  <label for="s_url">Direct video link (.mp4, .webm, .m3u8 ...)</label><input id="s_url" inputmode="url" placeholder="https://archive.org/download/.../movie.mp4">
+  <label for="s_urls">Links, one per line. You can start a line with the quality: 4K, 1080p, 720p, 480p, 360p ...</label>
+  <textarea id="s_urls" rows="5" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="1080p https://archive.org/download/item/movie.1080p.mp4&#10;720p https://archive.org/download/item/movie.720p.mp4&#10;https://archive.org/download/item/movie.mp4"></textarea>
   <label for="s_title">Label (optional)</label><input id="s_title" placeholder="e.g. Full movie">
   <label for="s_lic">License</label><select id="s_lic"><option value="public-domain">Public domain</option><option value="cc0">CC0</option><option value="cc-by">CC BY</option><option value="cc-by-sa">CC BY-SA</option><option value="licensed">Licensed to me</option></select>
-  <label for="s_ev">Page that proves the rights (link)</label><input id="s_ev" inputmode="url" placeholder="https://archive.org/details/...">
-  <label for="s_ter">Countries (comma-separated)</label><input id="s_ter" value="BD,IN">
-  <div class="chk"><input type="checkbox" id="s_ok"><label for="s_ok" style="margin:0;color:var(--txt)">I checked that I may share this video, and the page above shows it.</label></div>
-  <button class="pri" id="s_add">Add source</button><div class="msg" id="s_msg"></div></div>
+  <div class="chk"><input type="checkbox" id="s_ok"><label for="s_ok" style="margin:0;color:var(--txt)">I checked that I may share these videos.</label></div>
+  <button class="pri" id="s_add">Add links</button><div class="msg" id="s_msg"></div></div>
   <div class="card"><h3>Added sources</h3><div id="slist"></div></div></section>
- <section id="subs" class="hidden"><div class="card"><h3>Add a subtitle</h3>
+ <section id="subs" class="hidden"><div class="card"><h3>2. Add a subtitle</h3>
+  <div class="who none" id="who2">No movie chosen yet. Search above and press Choose.</div>
   <div class="mut" id="uhosts"></div>
-  <label for="u_url">Subtitle link (.srt or .vtt)</label><input id="u_url" inputmode="url" placeholder="https://archive.org/download/.../movie.bn.srt">
+  <label for="u_url">Subtitle link (.srt or .vtt)</label><input id="u_url" inputmode="url" autocapitalize="off" placeholder="https://archive.org/download/item/movie.bn.srt">
   <label for="u_lang">Language</label><select id="u_lang"><option value="ben">Bangla</option><option value="eng">English</option><option value="hin">Hindi</option><option value="tam">Tamil</option><option value="tel">Telugu</option><option value="urd">Urdu</option><option value="kor">Korean</option><option value="jpn">Japanese</option><option value="zho">Chinese</option></select>
   <label for="u_lic">License</label><select id="u_lic"><option value="public-domain">Public domain</option><option value="cc0">CC0</option><option value="cc-by">CC BY</option><option value="cc-by-sa">CC BY-SA</option><option value="licensed">Licensed to me</option></select>
-  <label for="u_ev">Page that proves the rights (link)</label><input id="u_ev" inputmode="url">
-  <div class="chk"><input type="checkbox" id="u_ok"><label for="u_ok" style="margin:0;color:var(--txt)">I checked that I may share this subtitle, and the page above shows it.</label></div>
+  <div class="chk"><input type="checkbox" id="u_ok"><label for="u_ok" style="margin:0;color:var(--txt)">I checked that I may share this subtitle.</label></div>
   <button class="pri" id="u_add">Add subtitle</button><div class="msg" id="u_msg"></div></div>
   <div class="card"><h3>Added subtitles</h3><div id="ulist"></div></div></section>
  <section id="backup" class="hidden"><div class="card"><h3>Backup</h3>
@@ -96,19 +99,26 @@ async function api(path,method,body){const r=await fetch(path,{method:method||'G
  const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(r.status===401?'Wrong token':r.status===429?'Too many tries, wait a few minutes':(d.reason||'Error '+r.status));return d}
 function say(id,t,ok){const e=$(id);e.textContent=t;e.className='msg '+(ok?'ok':'bad')}
 function btn(label,cls,fn){const b=document.createElement('button');b.textContent=label;if(cls)b.className=cls;b.onclick=fn;return b}
-function item(title,sub,...btns){return itemImg(null,title,sub,...btns)}
-function itemImg(img,title,sub,...btns){const d=document.createElement('div');d.className='item';if(img){const i=document.createElement('img');i.className='pt';i.src=img;i.alt='';i.loading='lazy';d.append(i)}const t=document.createElement('div');t.className='t';t.textContent=title;
- if(sub){const s=document.createElement('div');s.className='mut';s.textContent=sub;t.append(s)}d.append(t,...btns);return d}
-function choose(m){chosen=m;$('sel').textContent='Chosen: '+m.name+(m.year?' ('+m.year+')':'')+' · id '+m.id}
+function itemImg(img,title,sub,id,...btns){const d=document.createElement('div');d.className='item'+(chosen&&id&&chosen.id===id?' sel':'');if(img){const i=document.createElement('img');i.className='pt';i.src=img;i.alt='';i.loading='lazy';d.append(i)}
+ const t=document.createElement('div');t.className='t';t.textContent=title;if(sub){const s=document.createElement('div');s.className='mut';s.textContent=sub;t.append(s)}d.append(t,...btns);return d}
+function item(title,sub,...btns){return itemImg(null,title,sub,null,...btns)}
+function showTab(name){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.tab===name));for(const s of ['movies','sources','subs','backup'])$(s).classList.toggle('hidden',s!==name)}
+function label(m){return m.name+(m.year?' ('+m.year+')':'')}
+function choose(m,go){chosen=m;const text='Movie: '+label(m);
+ $('barn').textContent='';const b=document.createElement('b');b.textContent=text;$('barn').append(b);$('bar').classList.remove('hidden');
+ for(const id of ['who1','who2']){const w=$(id);w.textContent=text;w.className='who'}
+ document.querySelectorAll('#res .item').forEach(x=>x.classList.toggle('sel',x.dataset.id===m.id));
+ if(go!==false){showTab('sources');if($('sform').scrollIntoView)$('sform').scrollIntoView({behavior:'smooth',block:'start'})}}
+function unchoose(){chosen=null;$('bar').classList.add('hidden');for(const id of ['who1','who2']){const w=$(id);w.textContent='No movie chosen yet. Search above and press Choose.';w.className='who none'}document.querySelectorAll('.item.sel').forEach(x=>x.classList.remove('sel'))}
 async function saveOv(){ov=await api('/api/admin/overrides','PUT',ov);await loadFeed()}
 function toggle(list,id){const i=ov[list].indexOf(id);if(i>=0)ov[list].splice(i,1);else ov[list].push(id);const o=list==='pinned'?'hidden':'pinned';ov[o]=ov[o].filter(x=>x!==id);saveOv().catch(e=>alert(e.message))}
 async function loadFeed(){const d=await api('/api/admin/feed');const box=$('feed');box.textContent='';
  if(!d.movies.length){box.textContent='Nothing yet. If TMDB is not set up, the list stays empty.';return}
- for(const m of d.movies){const row=item(m.name+(m.year?' ('+m.year+')':''),ov.pinned.includes(m.id)?'Pinned':ov.hidden.includes(m.id)?'Hidden':'',
-  btn('Use',null,()=>choose(m)),btn(ov.pinned.includes(m.id)?'Unpin':'Pin',null,()=>toggle('pinned',m.id)),btn(ov.hidden.includes(m.id)?'Unhide':'Hide',null,()=>toggle('hidden',m.id)));box.append(row)}}
+ for(const m of d.movies){box.append(itemImg(null,label(m),ov.pinned.includes(m.id)?'Pinned':ov.hidden.includes(m.id)?'Hidden':'',m.id,
+  btn('Use',null,()=>choose(m)),btn(ov.pinned.includes(m.id)?'Unpin':'Pin',null,()=>toggle('pinned',m.id)),btn(ov.hidden.includes(m.id)?'Unhide':'Hide',null,()=>toggle('hidden',m.id))))}}
 async function loadSources(){const d=await api('/api/admin/sources');const box=$('slist');box.textContent='';
  if(!d.sources.length)box.textContent='No sources added yet.';
- for(const s of d.sources)box.append(item((s.movieName||s.movieId)+' · '+s.title,s.license+' · '+s.host+(s.movieName?' · '+s.movieId:''),btn('Delete','del',async()=>{if(confirm('Delete this source?')){await api('/api/admin/sources/'+encodeURIComponent(s.id),'DELETE');loadSources()}})))}
+ for(const s of d.sources)box.append(item((s.movieName||s.movieId)+' · '+s.title+(s.quality?' · '+s.quality:''),s.license+' · '+s.host+(s.movieName?' · '+s.movieId:''),btn('Delete','del',async()=>{if(confirm('Delete this source?')){await api('/api/admin/sources/'+encodeURIComponent(s.id),'DELETE');loadSources()}})))}
 async function loadSubs(){const d=await api('/api/admin/subtitles');const box=$('ulist');box.textContent='';
  if(!d.subtitles.length)box.textContent='No subtitles added yet.';
  for(const s of d.subtitles)box.append(item(s.lang+' · '+s.license,s.movieId+' · '+s.host,btn('Delete','del',async()=>{if(confirm('Delete this subtitle?')){await api('/api/admin/subtitles/'+encodeURIComponent(s.id),'DELETE');loadSubs()}})))}
@@ -117,17 +127,24 @@ async function open_(){try{sessionStorage.setItem('t',tok());const c=await api('
  $('tmdbwarn').classList.toggle('hidden',!!c.tmdb);$('shosts').textContent='Allowed hosts: '+c.playbackHosts.join(', ');$('uhosts').textContent='Allowed hosts: '+c.subtitleHosts.join(', ');
  await Promise.all([loadFeed(),loadSources(),loadSubs()])}catch(e){$('lmsg').textContent=e.message}}
 $('go').onclick=open_;$('tok').value=sessionStorage.getItem('t')||'';if($('tok').value)open_();
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
- for(const s of ['movies','sources','subs','backup'])$(s).classList.toggle('hidden',s!==b.dataset.tab)});
+$('clr').onclick=unchoose;
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 $('find').onclick=async()=>{const q=$('q').value.trim();if(!q)return;const box=$('res');box.textContent='Searching...';
  try{const d=await api('/api/admin/search?q='+encodeURIComponent(q));box.textContent='';if(!d.movies.length)box.textContent='No movie found.';
-  for(const m of d.movies)box.append(itemImg(m.poster,m.name+(m.year?' ('+m.year+')':''),m.id,btn('Choose','pri',()=>choose(m))))}catch(e){box.textContent=e.message}};
-$('s_add').onclick=async()=>{if(!chosen)return say('s_msg','Choose a movie first (search above).');
- try{const r=await api('/api/admin/sources','POST',{movieId:chosen.id,title:$('s_title').value,url:$('s_url').value,license:$('s_lic').value,rightsEvidenceUrl:$('s_ev').value,territory:$('s_ter').value,rightsConfirmed:$('s_ok').checked});
-  say('s_msg',r.placed?'Added. Now shown in: '+r.shownIn.join(', ')+'.':'Added, but the movie could not be placed in a catalog (TMDB lookup failed). Check the TMDB key.',r.placed);$('s_url').value='';$('s_ok').checked=false;loadSources()}catch(e){say('s_msg',e.message)}};
-$('u_add').onclick=async()=>{if(!chosen)return say('u_msg','Choose a movie first (search above).');
- try{await api('/api/admin/subtitles','POST',{movieId:chosen.id,lang:$('u_lang').value,url:$('u_url').value,license:$('u_lic').value,rightsEvidenceUrl:$('u_ev').value,rightsConfirmed:$('u_ok').checked});
-  say('u_msg','Added.',true);$('u_url').value='';$('u_ok').checked=false;loadSubs()}catch(e){say('u_msg',e.message)}};
+  for(const m of d.movies){const row=itemImg(m.poster,label(m),m.id,m.id,btn('Choose','pri',()=>choose(m)));row.dataset.id=m.id;box.append(row)}}catch(e){box.textContent=e.message}};
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter')$('find').click()});
+function parseLinks(text){return text.split(/\\r?\\n/).map(l=>l.trim()).filter(Boolean).map(l=>{const m=l.match(/^(4k|uhd|2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?|auto|hls)\\s*[:|-]?\\s+(https?:\\/\\/\\S+)$/i);return m?{line:l,quality:m[1],url:m[2]}:{line:l,quality:'',url:l}})}
+$('s_add').onclick=async()=>{if(!chosen)return say('s_msg','Choose a movie first: search above, then press Choose.');
+ const links=parseLinks($('s_urls').value);if(!links.length)return say('s_msg','Paste at least one video link.');
+ let done=0,last=null,problems=[],left=[];
+ for(const l of links){try{last=await api('/api/admin/sources','POST',{movieId:chosen.id,title:$('s_title').value,url:l.url,quality:l.quality,license:$('s_lic').value,rightsConfirmed:$('s_ok').checked});done++}catch(e){problems.push(e.message);left.push(l.line)}}
+ $('s_urls').value=left.join('\\n');if(!done)$('s_ok').checked=$('s_ok').checked;
+ const where=last&&last.placed?' Shown in: '+last.shownIn.join(', ')+'.':(last?' The movie could not be placed in a catalog (TMDB lookup failed). Check the TMDB key.':'');
+ say('s_msg',(done?done+' added.'+where:'')+(problems.length?' '+problems.length+' refused: '+problems[0]:''),done>0&&!problems.length&&(!last||last.placed));
+ if(done)loadSources()};
+$('u_add').onclick=async()=>{if(!chosen)return say('u_msg','Choose a movie first: search above, then press Choose.');
+ try{await api('/api/admin/subtitles','POST',{movieId:chosen.id,lang:$('u_lang').value,url:$('u_url').value,license:$('u_lic').value,rightsConfirmed:$('u_ok').checked});
+  say('u_msg','Added.',true);$('u_url').value='';loadSubs()}catch(e){say('u_msg',e.message)}};
 $('dl').onclick=async()=>{try{const d=await api('/api/admin/backup');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='cineworld-backup.json';a.click();say('b_msg','Backup downloaded.',true)}catch(e){say('b_msg',e.message)}};
 $('restore').onclick=async()=>{try{const data=JSON.parse($('rs').value);if(!confirm('Replace the current lists with this backup?'))return;const r=await api('/api/admin/restore','POST',data);
  say('b_msg','Restored: '+r.sources+' sources, '+r.subtitles+' subtitles, '+r.movies+' movies.',true);ov=await api('/api/admin/overrides');loadFeed();loadSources();loadSubs()}catch(e){say('b_msg',e.message)}};

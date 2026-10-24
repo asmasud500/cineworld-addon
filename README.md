@@ -71,7 +71,7 @@ When you open a movie, the **stream** list shows where it can be watched legally
 Set `ADMIN_API_TOKEN`, then open `https://<your-host>/admin` and enter the token. Search for a movie, choose it, then:
 
 - **Movies:** pin a film to the front or hide it everywhere.
-- **Sources:** add a direct video link for the chosen movie. The panel checks the link before saving: HTTPS only, host on the reviewed allowlist (archive.org, Wikimedia), a direct video file (`.mp4`, `.webm`, `.mkv`, `.m3u8` ...), a license label, a page that proves the rights, and your confirmation that you checked them. Links that fail are refused with the reason.
+- **Sources:** paste one or more direct video links for the chosen movie, one per line. Start a line with the quality (`4K`, `1080p`, `720p`, `480p`, `360p` ...) to offer every quality; viewers see them best first. The panel checks each link before saving: HTTPS only, host on the reviewed allowlist (archive.org, Wikimedia), a direct video file (`.mp4`, `.webm`, `.mkv`, `.m3u8` ...), a license label, and your confirmation that you may share it. The rights page is worked out automatically from the link (`archive.org/download/<item>/...` becomes `archive.org/details/<item>`; Wikimedia upload links become their Commons file page). Links that fail are refused with the reason and stay in the box.
 - **Subtitles:** same checks for `.srt` / `.vtt` files.
 - **Backup:** download or restore pins, hidden films, sources, subtitles and the placed films. Restore re-checks every record.
 

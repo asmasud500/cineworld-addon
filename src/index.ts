@@ -20,7 +20,7 @@ function genreExtra() { return { name: "genre", options: [...GENRE_NAMES], isReq
 
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.7.0",
+  version: "0.8.0",
   name: "CineWorld",
   description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Streams are limited to reviewed rights-cleared sources and links to official services (data from TMDB / JustWatch).",
   resources: ["catalog", "meta", "stream", "subtitles"],
@@ -219,7 +219,8 @@ const WATCH_LABELS: Record<WatchKind, string> = {
 builder.defineStreamHandler(async ({ id }: { id: string }) => {
   if (isHidden(id)) return { streams: [] };
   const reviewed = getReviewedSources(id).map((source) => ({
-    title: `${source.title} · ${source.license}`,
+    name: source.quality ? `CineWorld\n${source.quality}` : "CineWorld",
+    title: `${source.title}${source.quality ? ` · ${source.quality}` : ""} · ${source.license}`,
     url: source.url,
     behaviorHints: { notWebReady: false }
   }));

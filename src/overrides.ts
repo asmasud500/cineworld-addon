@@ -1,5 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { loadJson, saveJson } from "./jsonStore.js";
 import type { Movie } from "./catalog.js";
 
 /**
@@ -21,8 +20,7 @@ function parseList(value: unknown): string[] {
 }
 
 function load(): Overrides {
-  let fromFile: Partial<Overrides> = {};
-  try { fromFile = JSON.parse(readFileSync(FILE, "utf8")) as Partial<Overrides>; } catch { /* no saved file yet */ }
+  const fromFile = loadJson<Partial<Overrides>>(FILE, {});
   return {
     pinned: parseList([...parseList(process.env.PINNED_MOVIE_IDS), ...parseList(fromFile.pinned)]),
     hidden: parseList([...parseList(process.env.HIDDEN_MOVIE_IDS), ...parseList(fromFile.hidden)])
@@ -37,10 +35,7 @@ export function setOverrides(input: unknown): Overrides {
   const value = (input ?? {}) as Partial<Overrides>;
   const hidden = parseList(value.hidden);
   state = { hidden, pinned: parseList(value.pinned).filter((id) => !hidden.includes(id)) };
-  try {
-    mkdirSync(dirname(FILE), { recursive: true });
-    writeFileSync(FILE, JSON.stringify(state, null, 2));
-  } catch { /* read-only disk: keep the change in memory only */ }
+  saveJson(FILE, state); // read-only disk: the change stays in memory only
   return getOverrides();
 }
 

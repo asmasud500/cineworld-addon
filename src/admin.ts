@@ -3,6 +3,8 @@ import express from "express";
 import type { Request, Response, Router } from "express";
 import type { Movie } from "./catalog.js";
 import { getOverrides, movieKey, setOverrides } from "./overrides.js";
+import { LEGAL_SOURCES, PLAYBACK_HOSTS, addLegalSource, removeLegalSource, replaceLegalSources } from "./sources.js";
+import { SUBTITLES, SUBTITLE_HOSTS, addSubtitle, removeSubtitle, replaceSubtitles } from "./subtitles.js";
 
 const FAIL_LIMIT = 10;
 const FAIL_WINDOW_MS = 5 * 60 * 1000;
@@ -35,46 +37,166 @@ function authorized(req: Request, res: Response): boolean {
 }
 
 const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CineWorld admin</title>
-<style>body{font:16px system-ui;margin:0;padding:16px;background:#111;color:#eee}input,button{font:inherit;padding:8px;border-radius:6px;border:1px solid #444;background:#222;color:#eee}
-button{cursor:pointer}li{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #333}li span{flex:1}ul{list-style:none;padding:0}.p{color:#6cf}.h{color:#f77}</style></head>
-<body><h1>CineWorld admin</h1><p>Pin = show first. Hide = remove everywhere.</p>
-<p><input id="t" type="password" placeholder="Admin token"> <button id="go">Load</button></p><p id="m"></p><ul id="l"></ul>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--txt:#eceff4;--mut:#9aa3b2;--acc:#4f9dff;--ok:#3ecf8e;--bad:#ff6b6b}
+*{box-sizing:border-box}body{font:16px/1.4 system-ui,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
+header{padding:14px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
+h1{font-size:18px;margin:0}main{padding:12px 16px 80px;max-width:760px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:12px 0}.tabs button{flex:none}
+input,select,button,textarea{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:#11141a;color:var(--txt);width:100%}
+button{width:auto;cursor:pointer}button.pri{background:var(--acc);border-color:var(--acc);color:#04101f;font-weight:600}
+button.on{border-color:var(--acc);color:var(--acc)}button.del{color:var(--bad)}
+label{display:block;margin:10px 0 4px;color:var(--mut);font-size:14px}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.row>button{flex:none}
+.item{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}
+.item .t{flex:1;min-width:0;overflow-wrap:anywhere}.mut{color:var(--mut);font-size:14px}.msg{margin:8px 0;min-height:1.2em}.ok{color:var(--ok)}.bad{color:var(--bad)}
+.p{color:#6cf}.h{color:var(--bad)}.chk{display:flex;gap:10px;align-items:flex-start;margin:12px 0}.chk input{width:auto;margin-top:4px}
+.hidden{display:none}#sel{margin-top:8px}
+</style></head><body>
+<header><h1>CineWorld admin</h1></header>
+<main>
+<div class="card" id="login"><label for="tok">Admin token</label><div class="row"><input id="tok" type="password" autocomplete="off"><button class="pri" id="go">Open</button></div><div class="msg bad" id="lmsg"></div></div>
+<div id="app" class="hidden">
+ <div class="card"><label for="q">Find a movie</label><div class="row"><input id="q" placeholder="Movie name"><button id="find">Search</button></div>
+  <div id="res"></div><div id="sel" class="mut">No movie chosen.</div></div>
+ <div class="tabs"><button data-tab="movies" class="on">Movies</button><button data-tab="sources">Sources</button><button data-tab="subs">Subtitles</button><button data-tab="backup">Backup</button></div>
+ <section id="movies"><div class="card"><div class="mut">Pin = show first. Hide = remove everywhere. Pick a movie to use it for a source.</div><div id="feed"></div></div></section>
+ <section id="sources" class="hidden"><div class="card"><h3>Add a video link</h3>
+  <div class="mut" id="shosts"></div>
+  <label for="s_url">Direct video link (.mp4, .webm, .m3u8 ...)</label><input id="s_url" inputmode="url" placeholder="https://archive.org/download/.../movie.mp4">
+  <label for="s_title">Label (optional)</label><input id="s_title" placeholder="e.g. Full movie">
+  <label for="s_lic">License</label><select id="s_lic"><option value="public-domain">Public domain</option><option value="cc0">CC0</option><option value="cc-by">CC BY</option><option value="cc-by-sa">CC BY-SA</option><option value="licensed">Licensed to me</option></select>
+  <label for="s_ev">Page that proves the rights (link)</label><input id="s_ev" inputmode="url" placeholder="https://archive.org/details/...">
+  <label for="s_ter">Countries (comma-separated)</label><input id="s_ter" value="BD,IN">
+  <div class="chk"><input type="checkbox" id="s_ok"><label for="s_ok" style="margin:0;color:var(--txt)">I checked that I may share this video, and the page above shows it.</label></div>
+  <button class="pri" id="s_add">Add source</button><div class="msg" id="s_msg"></div></div>
+  <div class="card"><h3>Added sources</h3><div id="slist"></div></div></section>
+ <section id="subs" class="hidden"><div class="card"><h3>Add a subtitle</h3>
+  <div class="mut" id="uhosts"></div>
+  <label for="u_url">Subtitle link (.srt or .vtt)</label><input id="u_url" inputmode="url" placeholder="https://archive.org/download/.../movie.bn.srt">
+  <label for="u_lang">Language</label><select id="u_lang"><option value="ben">Bangla</option><option value="eng">English</option><option value="hin">Hindi</option><option value="tam">Tamil</option><option value="tel">Telugu</option><option value="urd">Urdu</option><option value="kor">Korean</option><option value="jpn">Japanese</option><option value="zho">Chinese</option></select>
+  <label for="u_lic">License</label><select id="u_lic"><option value="public-domain">Public domain</option><option value="cc0">CC0</option><option value="cc-by">CC BY</option><option value="cc-by-sa">CC BY-SA</option><option value="licensed">Licensed to me</option></select>
+  <label for="u_ev">Page that proves the rights (link)</label><input id="u_ev" inputmode="url">
+  <div class="chk"><input type="checkbox" id="u_ok"><label for="u_ok" style="margin:0;color:var(--txt)">I checked that I may share this subtitle, and the page above shows it.</label></div>
+  <button class="pri" id="u_add">Add subtitle</button><div class="msg" id="u_msg"></div></div>
+  <div class="card"><h3>Added subtitles</h3><div id="ulist"></div></div></section>
+ <section id="backup" class="hidden"><div class="card"><h3>Backup</h3>
+  <div class="mut">On free hosting the saved list can disappear at the next deploy. Download a backup now and then; paste it below to restore.</div>
+  <p><button id="dl">Download backup</button></p><label for="rs">Restore from backup</label><textarea id="rs" rows="6" placeholder="Paste the backup text here"></textarea>
+  <p><button class="pri" id="restore">Restore</button></p><div class="msg" id="b_msg"></div></div></section>
+</div></main>
 <script>
-const $=id=>document.getElementById(id);let ov={pinned:[],hidden:[]};
-$('t').value=sessionStorage.getItem('t')||'';
-const hdr=()=>({authorization:'Bearer '+$('t').value.trim(),'content-type':'application/json'});
-async function api(path,opt){const r=await fetch(path,{...opt,headers:hdr()});if(!r.ok)throw new Error(r.status===401?'Wrong token':'Error '+r.status);return r.json()}
-async function save(){ov=await api('/api/admin/overrides',{method:'PUT',body:JSON.stringify(ov)});await load()}
-function toggle(list,id){const i=ov[list].indexOf(id);if(i>=0)ov[list].splice(i,1);else ov[list].push(id);const other=list==='pinned'?'hidden':'pinned';ov[other]=ov[other].filter(x=>x!==id);save().catch(e=>$('m').textContent=e.message)}
-async function load(){try{sessionStorage.setItem('t',$('t').value.trim());ov=await api('/api/admin/overrides');const d=await api('/api/admin/feed');const ul=$('l');ul.textContent='';
-for(const m of d.movies){const li=document.createElement('li');const s=document.createElement('span');s.textContent=m.name+(m.year?' ('+m.year+')':'');
-if(ov.pinned.includes(m.id)){s.className='p'}if(ov.hidden.includes(m.id)){s.className='h'}
-const a=document.createElement('button');a.textContent=ov.pinned.includes(m.id)?'Unpin':'Pin';a.onclick=()=>toggle('pinned',m.id);
-const b=document.createElement('button');b.textContent=ov.hidden.includes(m.id)?'Unhide':'Hide';b.onclick=()=>toggle('hidden',m.id);li.append(s,a,b);ul.append(li)}
-$('m').textContent=d.movies.length+' movies'}catch(e){$('m').textContent=e.message}}
-$('go').onclick=load;if($('t').value)load();
+const $=id=>document.getElementById(id);let ov={pinned:[],hidden:[]},chosen=null;
+const tok=()=>$('tok').value.trim();
+async function api(path,method,body){const r=await fetch(path,{method:method||'GET',headers:{authorization:'Bearer '+tok(),'content-type':'application/json'},body:body?JSON.stringify(body):undefined});
+ const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(r.status===401?'Wrong token':r.status===429?'Too many tries, wait a few minutes':(d.reason||'Error '+r.status));return d}
+function say(id,t,ok){const e=$(id);e.textContent=t;e.className='msg '+(ok?'ok':'bad')}
+function btn(label,cls,fn){const b=document.createElement('button');b.textContent=label;if(cls)b.className=cls;b.onclick=fn;return b}
+function item(title,sub,...btns){const d=document.createElement('div');d.className='item';const t=document.createElement('div');t.className='t';t.textContent=title;
+ if(sub){const s=document.createElement('div');s.className='mut';s.textContent=sub;t.append(s)}d.append(t,...btns);return d}
+function choose(m){chosen=m;$('sel').textContent='Chosen: '+m.name+(m.year?' ('+m.year+')':'')+' · id '+m.id}
+async function saveOv(){ov=await api('/api/admin/overrides','PUT',ov);await loadFeed()}
+function toggle(list,id){const i=ov[list].indexOf(id);if(i>=0)ov[list].splice(i,1);else ov[list].push(id);const o=list==='pinned'?'hidden':'pinned';ov[o]=ov[o].filter(x=>x!==id);saveOv().catch(e=>alert(e.message))}
+async function loadFeed(){const d=await api('/api/admin/feed');const box=$('feed');box.textContent='';
+ if(!d.movies.length){box.textContent='Nothing yet. If TMDB is not set up, the list stays empty.';return}
+ for(const m of d.movies){const row=item(m.name+(m.year?' ('+m.year+')':''),ov.pinned.includes(m.id)?'Pinned':ov.hidden.includes(m.id)?'Hidden':'',
+  btn('Use',null,()=>choose(m)),btn(ov.pinned.includes(m.id)?'Unpin':'Pin',null,()=>toggle('pinned',m.id)),btn(ov.hidden.includes(m.id)?'Unhide':'Hide',null,()=>toggle('hidden',m.id)));box.append(row)}}
+async function loadSources(){const d=await api('/api/admin/sources');const box=$('slist');box.textContent='';
+ if(!d.sources.length)box.textContent='No sources added yet.';
+ for(const s of d.sources)box.append(item(s.title+' · '+s.license,s.movieId+' · '+s.host,btn('Delete','del',async()=>{if(confirm('Delete this source?')){await api('/api/admin/sources/'+encodeURIComponent(s.id),'DELETE');loadSources()}})))}
+async function loadSubs(){const d=await api('/api/admin/subtitles');const box=$('ulist');box.textContent='';
+ if(!d.subtitles.length)box.textContent='No subtitles added yet.';
+ for(const s of d.subtitles)box.append(item(s.lang+' · '+s.license,s.movieId+' · '+s.host,btn('Delete','del',async()=>{if(confirm('Delete this subtitle?')){await api('/api/admin/subtitles/'+encodeURIComponent(s.id),'DELETE');loadSubs()}})))}
+async function open_(){try{sessionStorage.setItem('t',tok());const c=await api('/api/admin/config');ov=await api('/api/admin/overrides');
+ $('login').classList.add('hidden');$('app').classList.remove('hidden');
+ $('shosts').textContent='Allowed hosts: '+c.playbackHosts.join(', ');$('uhosts').textContent='Allowed hosts: '+c.subtitleHosts.join(', ');
+ await Promise.all([loadFeed(),loadSources(),loadSubs()])}catch(e){$('lmsg').textContent=e.message}}
+$('go').onclick=open_;$('tok').value=sessionStorage.getItem('t')||'';if($('tok').value)open_();
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
+ for(const s of ['movies','sources','subs','backup'])$(s).classList.toggle('hidden',s!==b.dataset.tab)});
+$('find').onclick=async()=>{const q=$('q').value.trim();if(!q)return;const box=$('res');box.textContent='Searching...';
+ try{const d=await api('/api/admin/search?q='+encodeURIComponent(q));box.textContent='';if(!d.movies.length)box.textContent='No movie found.';
+  for(const m of d.movies)box.append(item(m.name+(m.year?' ('+m.year+')':''),m.id,btn('Choose','pri',()=>choose(m))))}catch(e){box.textContent=e.message}};
+$('s_add').onclick=async()=>{if(!chosen)return say('s_msg','Choose a movie first (search above).');
+ try{await api('/api/admin/sources','POST',{movieId:chosen.id,title:$('s_title').value,url:$('s_url').value,license:$('s_lic').value,rightsEvidenceUrl:$('s_ev').value,territory:$('s_ter').value,rightsConfirmed:$('s_ok').checked});
+  say('s_msg','Added.',true);$('s_url').value='';$('s_ok').checked=false;loadSources()}catch(e){say('s_msg',e.message)}};
+$('u_add').onclick=async()=>{if(!chosen)return say('u_msg','Choose a movie first (search above).');
+ try{await api('/api/admin/subtitles','POST',{movieId:chosen.id,lang:$('u_lang').value,url:$('u_url').value,license:$('u_lic').value,rightsEvidenceUrl:$('u_ev').value,rightsConfirmed:$('u_ok').checked});
+  say('u_msg','Added.',true);$('u_url').value='';$('u_ok').checked=false;loadSubs()}catch(e){say('u_msg',e.message)}};
+$('dl').onclick=async()=>{try{const d=await api('/api/admin/backup');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='cineworld-backup.json';a.click();say('b_msg','Backup downloaded.',true)}catch(e){say('b_msg',e.message)}};
+$('restore').onclick=async()=>{try{const data=JSON.parse($('rs').value);if(!confirm('Replace the current lists with this backup?'))return;const r=await api('/api/admin/restore','POST',data);
+ say('b_msg','Restored: '+r.sources+' sources, '+r.subtitles+' subtitles.',true);ov=await api('/api/admin/overrides');loadFeed();loadSources();loadSubs()}catch(e){say('b_msg',e.message)}};
 </script></body></html>`;
 
-export function createAdminRouter(getFeed: () => Promise<Movie[]>): Router {
+export interface AdminDeps {
+  getFeed: () => Promise<Movie[]>;
+  searchMovies: (query: string) => Promise<Movie[]>;
+}
+
+export function createAdminRouter(deps: AdminDeps): Router {
   const router = express.Router();
+  // Check the token before any request body is read or parsed.
+  const auth = (req: Request, res: Response, next: () => void) => { if (authorized(req, res)) next(); };
+  const guarded = (handler: (req: Request, res: Response) => void | Promise<void>) =>
+    async (req: Request, res: Response) => {
+      if (!authorized(req, res)) return;
+      res.setHeader("cache-control", "no-store");
+      try { await handler(req, res); } catch { res.status(500).json({ error: "server_error" }); }
+    };
+
   // The page itself holds no data and no secrets; every API call needs the token.
   router.get("/admin", (_req, res) => {
     if (!process.env.ADMIN_API_TOKEN?.trim()) { res.status(404).json({ error: "not_found" }); return; }
-    res.setHeader("content-security-policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'");
+    res.setHeader("content-security-policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'");
     res.setHeader("cache-control", "no-store");
     res.type("html").send(PAGE);
   });
-  router.get("/api/admin/overrides", (req, res) => { if (authorized(req, res)) res.setHeader("cache-control", "no-store").json(getOverrides()); });
-  router.put("/api/admin/overrides", express.json({ limit: "100kb" }), (req, res) => {
-    if (!authorized(req, res)) return;
-    res.setHeader("cache-control", "no-store").json(setOverrides(req.body));
-  });
-  router.get("/api/admin/feed", async (req, res) => {
-    if (!authorized(req, res)) return;
-    const feed = await getFeed();
-    res.setHeader("cache-control", "no-store").json({
-      movies: feed.map((movie) => ({ id: movieKey(movie), name: movie.name, year: movie.releaseInfo }))
-    });
-  });
+
+  router.get("/api/admin/config", guarded((_req, res) => { res.json({ playbackHosts: PLAYBACK_HOSTS, subtitleHosts: SUBTITLE_HOSTS }); }));
+  router.get("/api/admin/overrides", guarded((_req, res) => { res.json(getOverrides()); }));
+  router.put("/api/admin/overrides", auth, express.json({ limit: "100kb" }), guarded((req, res) => { res.json(setOverrides(req.body)); }));
+  router.get("/api/admin/feed", guarded(async (_req, res) => {
+    const feed = await deps.getFeed();
+    res.json({ movies: feed.map((movie) => ({ id: movieKey(movie), name: movie.name, year: movie.releaseInfo })) });
+  }));
+  router.get("/api/admin/search", guarded(async (req, res) => {
+    const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
+    const movies = query ? await deps.searchMovies(query) : [];
+    res.json({ movies: movies.slice(0, 12).map((movie) => ({ id: movieKey(movie), name: movie.name, year: movie.releaseInfo })) });
+  }));
+
+  router.get("/api/admin/sources", guarded((_req, res) => { res.json({ sources: LEGAL_SOURCES }); }));
+  router.post("/api/admin/sources", auth, express.json({ limit: "20kb" }), guarded((req, res) => {
+    const result = addLegalSource(req.body ?? {});
+    if (!result.ok) { res.status(400).json({ error: "rejected", reason: result.reason }); return; }
+    res.status(201).json(result.source);
+  }));
+  router.delete("/api/admin/sources/:id", guarded((req, res) => {
+    if (!removeLegalSource(String(req.params.id))) { res.status(404).json({ error: "not_found" }); return; }
+    res.json({ ok: true });
+  }));
+
+  router.get("/api/admin/subtitles", guarded((_req, res) => { res.json({ subtitles: SUBTITLES }); }));
+  router.post("/api/admin/subtitles", auth, express.json({ limit: "20kb" }), guarded((req, res) => {
+    const result = addSubtitle(req.body ?? {});
+    if (!result.ok) { res.status(400).json({ error: "rejected", reason: result.reason }); return; }
+    res.status(201).json(result.record);
+  }));
+  router.delete("/api/admin/subtitles/:id", guarded((req, res) => {
+    if (!removeSubtitle(String(req.params.id))) { res.status(404).json({ error: "not_found" }); return; }
+    res.json({ ok: true });
+  }));
+
+  router.get("/api/admin/backup", guarded((_req, res) => {
+    res.json({ overrides: getOverrides(), sources: LEGAL_SOURCES, subtitles: SUBTITLES });
+  }));
+  // Restore re-validates every record, so a backup cannot smuggle in a link that the panel itself would refuse.
+  router.post("/api/admin/restore", auth, express.json({ limit: "2mb" }), guarded((req, res) => {
+    const body = (req.body ?? {}) as { overrides?: unknown; sources?: unknown; subtitles?: unknown };
+    if (body.overrides !== undefined) setOverrides(body.overrides);
+    res.json({ sources: replaceLegalSources(body.sources ?? []), subtitles: replaceSubtitles(body.subtitles ?? []), overrides: getOverrides() });
+  }));
+  // Malformed or oversized JSON gets a short JSON answer instead of a stack trace.
+  router.use((_err: unknown, _req: Request, res: Response, _next: () => void) => { res.status(400).json({ error: "bad_request" }); });
   return router;
 }

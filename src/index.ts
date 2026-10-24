@@ -18,7 +18,7 @@ function genreExtra() { return { name: "genre", options: [...GENRE_NAMES], isReq
 
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.5.0",
+  version: "0.6.0",
   name: "CineWorld",
   description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Streams are limited to reviewed rights-cleared sources and links to official services (data from TMDB / JustWatch).",
   resources: ["catalog", "meta", "stream", "subtitles"],
@@ -186,9 +186,8 @@ const WATCH_LABELS: Record<WatchKind, string> = {
 
 builder.defineStreamHandler(async ({ id }: { id: string }) => {
   if (isHidden(id)) return { streams: [] };
-  const movie = getCatalog().find((item) => (item.imdbId ?? item.id) === id);
-  const reviewed = (movie ? getReviewedSources(movie.id) : []).map((source) => ({
-    title: `CineWorld · ${source.license}`,
+  const reviewed = getReviewedSources(id).map((source) => ({
+    title: `${source.title} · ${source.license}`,
     url: source.url,
     behaviorHints: { notWebReady: false }
   }));
@@ -213,7 +212,10 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/catalog", (_req, res) => {
   res.json({ categories: CINEMA_CATEGORIES, movies: getCatalog() });
 });
-app.use(createAdminRouter(getFeed));
+app.use(createAdminRouter({
+  getFeed: () => getFeed(),
+  searchMovies: (query) => searchTmdbMovies(query, "world")
+}));
 app.use("/", getRouter(addonInterface));
 app.use((_req, res) => { res.status(404).json({ error: "not_found" }); });
 

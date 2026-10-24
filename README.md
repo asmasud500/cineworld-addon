@@ -66,9 +66,22 @@ Each category row shows only films that really belong to it. Films from the upst
 
 When you open a movie, the **stream** list shows where it can be watched legally in Bangladesh and India (default `WATCH_REGIONS=BD,IN`; change with a comma-separated list of two-letter country codes): subscription, free with ads, rent or buy, for example Netflix, Chorki or Hoichoi. Each entry opens the official TMDB/JustWatch page for that region. CineWorld does not fetch, proxy or resolve any video itself. Needs the TMDB key. Watch-provider data is powered by JustWatch, and attribution is required: *Streaming availability data provided by JustWatch via TMDB.* This product uses the TMDB API but is not endorsed or certified by TMDB.
 
+## Admin panel (v0.6)
+
+Set `ADMIN_API_TOKEN`, then open `https://<your-host>/admin` and enter the token. Search for a movie, choose it, then:
+
+- **Movies:** pin a film to the front or hide it everywhere.
+- **Sources:** add a direct video link for the chosen movie. The panel checks the link before saving: HTTPS only, host on the reviewed allowlist (archive.org, Wikimedia), a direct video file (`.mp4`, `.webm`, `.mkv`, `.m3u8` ...), a license label, a page that proves the rights, and your confirmation that you checked them. Links that fail are refused with the reason.
+- **Subtitles:** same checks for `.srt` / `.vtt` files.
+- **Backup:** download or restore pins, hidden films, sources and subtitles. Restore re-checks every record.
+
+Added sources show up in the movie's stream list, ahead of the official-service links. The allowlist is fixed in code on purpose; adding a host needs a code change and review.
+
+Saved data lives in `data/` (`SOURCES_FILE`, `SUBTITLES_FILE`, `OVERRIDES_FILE` change the paths). On hosts with a temporary disk it is lost at the next deploy, so download a backup now and then, or mount a persistent disk.
+
 ## Legal playback policy
 
-A source must be added to `src/sources.ts` only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. Metadata-provider results are for discovery only and never create playback links. The catalog deliberately has **no titles or playback streams by default** until verified metadata and source rights are curated. This avoids implying that a film is public domain merely because it is old or appears on an archive.
+A source must be added (admin panel or `src/sources.ts`) only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. Metadata-provider results are for discovery only and never create playback links. The catalog deliberately has **no titles or playback streams by default** until verified metadata and source rights are curated. This avoids implying that a film is public domain merely because it is old or appears on an archive.
 
 Never add arbitrary user-provided URLs to playback responses. The validator accepts HTTPS only, rejects credentials and non-allowlisted hosts, and requires an explicit `reviewed: true` record.
 

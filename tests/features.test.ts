@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Keep test data out of the real data/ folder. Must run before the modules below are imported.
+vi.hoisted(() => {
+  process.env.SOURCES_FILE = "/tmp/cineworld-test/sources.json";
+  process.env.SUBTITLES_FILE = "/tmp/cineworld-test/subtitles.json";
+  process.env.OVERRIDES_FILE = "/tmp/cineworld-test/overrides.json";
+});
 import type { AddressInfo } from "node:net";
 import express from "express";
 import { buildUpcomingFeed, hasGenre } from "../src/catalog.js";
@@ -111,7 +118,7 @@ describe("admin API", () => {
   let base = "";
   beforeEach(async () => {
     process.env.ADMIN_API_TOKEN = "secret-token";
-    app.use(createAdminRouter(async () => [mk("tt1", { name: "One" })]));
+    app.use(createAdminRouter({ getFeed: async () => [mk("tt1", { name: "One" })], searchMovies: async () => [mk("tt2", { name: "Two" })] }));
     await new Promise<void>((resolve) => { server = app.listen(0, "127.0.0.1", () => resolve()); });
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -180,5 +187,85 @@ describe("official watch options", () => {
     expect(await getWatchOptions("tt0000000")).toEqual([]);
     delete process.env.TMDB_API_KEY;
     expect(await getWatchOptions("tt9")).toEqual([]);
+  });
+});
+
+import { LEGAL_SOURCES, addLegalSource, getReviewedSources, removeLegalSource, replaceLegalSources } from "../src/sources.js";
+import { SUBTITLES, addSubtitle, replaceSubtitles } from "../src/subtitles.js";
+
+describe("adding sources and subtitles from the panel", () => {
+  const ok = { movieId: "tt1", title: "Full movie", url: "https://archive.org/download/x/film.mp4", license: "public-domain", rightsEvidenceUrl: "https://archive.org/details/x", territory: "BD, IN", rightsConfirmed: true };
+  afterEach(() => { replaceLegalSources([]); replaceSubtitles([]); });
+
+  it("accepts a valid archive.org video and serves it for that movie", () => {
+    const result = addLegalSource(ok);
+    expect(result.ok).toBe(true);
+    expect(getReviewedSources("tt1").map((s) => s.url)).toEqual([ok.url]);
+    expect(getReviewedSources("tt1")[0]).toMatchObject({ host: "archive.org", territory: ["BD", "IN"], reviewed: true });
+    expect(removeLegalSource(getReviewedSources("tt1")[0]!.id)).toBe(true);
+    expect(LEGAL_SOURCES).toHaveLength(0);
+  });
+
+  it("refuses unconfirmed rights, unknown hosts, web pages instead of video files, and duplicates", () => {
+    expect(addLegalSource({ ...ok, rightsConfirmed: false })).toMatchObject({ ok: false });
+    const host = addLegalSource({ ...ok, url: "https://some-movie-site.example/film.mp4" });
+    expect(host).toMatchObject({ ok: false });
+    expect((host as { reason: string }).reason).toContain("allowlist");
+    expect(addLegalSource({ ...ok, url: "https://archive.org/details/x" })).toMatchObject({ ok: false });
+    expect(addLegalSource({ ...ok, rightsEvidenceUrl: "not a url" })).toMatchObject({ ok: false });
+    expect(addLegalSource({ ...ok, license: "free-for-all" })).toMatchObject({ ok: false });
+    expect(addLegalSource({ ...ok, movieId: "" })).toMatchObject({ ok: false });
+    expect(addLegalSource(ok)).toMatchObject({ ok: true });
+    expect(addLegalSource(ok)).toMatchObject({ ok: false });
+  });
+
+  it("restore keeps only records that pass validation", () => {
+    const good = (addLegalSource(ok) as { source: unknown }).source;
+    const bad = { ...(good as object), id: "bad", url: "https://evil.example/a.mp4", host: "evil.example" };
+    expect(replaceLegalSources([good, bad, "junk", null])).toBe(1);
+    expect(LEGAL_SOURCES.map((s) => s.id)).toEqual([(good as { id: string }).id]);
+  });
+
+  it("subtitles follow the same rules", () => {
+    const sub = { movieId: "tt1", lang: "ben", url: "https://archive.org/download/x/film.bn.srt", license: "cc0", rightsEvidenceUrl: "https://archive.org/details/x", rightsConfirmed: true };
+    expect(addSubtitle(sub)).toMatchObject({ ok: true });
+    expect(SUBTITLES).toHaveLength(1);
+    expect(addSubtitle({ ...sub, rightsConfirmed: false })).toMatchObject({ ok: false });
+    expect(addSubtitle({ ...sub, url: "https://other.example/a.srt" })).toMatchObject({ ok: false });
+  });
+});
+
+describe("admin API for sources", () => {
+  let server: ReturnType<typeof app.listen>;
+  const app = express();
+  let base = "";
+  const headers = { authorization: "Bearer secret-token", "content-type": "application/json" };
+  beforeEach(async () => {
+    process.env.ADMIN_API_TOKEN = "secret-token";
+    app.use(createAdminRouter({ getFeed: async () => [mk("tt1", { name: "One" })], searchMovies: async (q) => [mk("tt2", { name: `Found ${q}` })] }));
+    await new Promise<void>((resolve) => { server = app.listen(0, "127.0.0.1", () => resolve()); });
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterEach(async () => { delete process.env.ADMIN_API_TOKEN; replaceLegalSources([]); replaceSubtitles([]); await new Promise<void>((resolve) => { server.close(() => resolve()); }); });
+
+  it("adds, lists, backs up, deletes and searches", async () => {
+    const body = { movieId: "tt2", title: "Film", url: "https://archive.org/download/y/film.mp4", license: "cc-by", rightsEvidenceUrl: "https://archive.org/details/y", territory: "BD", rightsConfirmed: true };
+    const created = await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: JSON.stringify(body) });
+    expect(created.status).toBe(201);
+    const { id } = await created.json() as { id: string };
+    const backup = await (await fetch(`${base}/api/admin/backup`, { headers })).json() as { sources: unknown[] };
+    expect(backup.sources).toHaveLength(1);
+    const search = await (await fetch(`${base}/api/admin/search?q=leo`, { headers })).json() as { movies: Array<{ name: string }> };
+    expect(search.movies[0]?.name).toBe("Found leo");
+    expect((await fetch(`${base}/api/admin/sources/${id}`, { method: "DELETE", headers })).status).toBe(200);
+    expect((await fetch(`${base}/api/admin/sources/${id}`, { method: "DELETE", headers })).status).toBe(404);
+  });
+
+  it("explains why a link is refused and needs the token", async () => {
+    const bad = await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: JSON.stringify({ movieId: "tt2", url: "https://piracy.example/x.mp4", license: "cc0", rightsEvidenceUrl: "https://archive.org/x", territory: "BD", rightsConfirmed: true }) });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { reason: string }).reason).toContain("allowlist");
+    expect((await fetch(`${base}/api/admin/sources`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(401);
+    expect((await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: "{not json" })).status).toBe(400);
   });
 });

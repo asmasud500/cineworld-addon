@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { deriveEvidenceUrl } from "./evidence.js";
-import { REVIEWED_HOSTS_LABEL, isReviewedHost } from "./hosts.js";
 import { loadJson, saveJson } from "./jsonStore.js";
 
 export interface LegalSource {
@@ -45,7 +43,7 @@ export function qualityRank(quality?: string): number {
   return index === -1 ? QUALITIES.length : index;
 }
 
-export const PLAYBACK_HOSTS: string[] = [...REVIEWED_HOSTS_LABEL];
+export const PLAYBACK_HOSTS: string[] = ["Any HTTPS host (direct video URLs only)"];
 
 /**
  * Empty until an editor verifies the film's rights and exact URL (admin panel or restore).
@@ -67,21 +65,11 @@ export function validateLegalSource(source: LegalSource): { valid: boolean; reas
   if (!source.host || parsed.hostname.toLowerCase() !== source.host.toLowerCase()) {
     return { valid: false, reason: "Declared host does not match the playback URL." };
   }
-  if (!isReviewedHost(parsed.hostname)) {
-    return { valid: false, reason: `Playback host is not on CineWorld's reviewed host allowlist (${PLAYBACK_HOSTS.join(", ")}).` };
-  }
   if (!VIDEO_FILE.test(parsed.pathname)) return { valid: false, reason: "The URL must point directly to a video file (.mp4, .webm, .mkv, .m3u8 ...), not to a web page." };
   if (!ALLOWED_LICENSES.has(source.license)) return { valid: false, reason: "Unsupported license label." };
   if (source.quality !== undefined && !(QUALITIES as readonly string[]).includes(source.quality)) return { valid: false, reason: `Quality must be one of ${QUALITIES.join(", ")}.` };
   if (!source.reviewed || !source.reviewedAt) return { valid: false, reason: "Source has not been reviewed and dated." };
 
-  let evidence: URL;
-  try {
-    evidence = new URL(source.rightsEvidenceUrl);
-  } catch {
-    return { valid: false, reason: "Rights evidence URL is missing or invalid." };
-  }
-  if (evidence.protocol !== "https:") return { valid: false, reason: "Rights evidence must use HTTPS." };
   if (!source.territory.length) return { valid: false, reason: "At least one allowed territory must be specified." };
 
   return { valid: true };
@@ -115,8 +103,8 @@ export function addLegalSource(input: NewSourceInput): { ok: true; source: Legal
   const quality = normalizeQuality(input.quality);
   if (quality === null) return { ok: false, reason: `Quality must be one of ${QUALITIES.join(", ")}.` };
   // The rights page is worked out from the link itself unless the editor supplies one.
-  const evidence = text(input.rightsEvidenceUrl, 2000) || deriveEvidenceUrl(url) || "";
-  if (!evidence) return { ok: false, reason: "Use a direct archive.org /download/... or Wikimedia upload link." };
+  // Rights evidence URL is optional; only valid HTTPS direct video URLs are accepted.
+  const evidence = text(input.rightsEvidenceUrl, 2000);
   const source: LegalSource = {
     id: randomUUID(), movieId, title: text(input.title, 80) || "Source", url, host,
     license: text(input.license, 20) as LegalSource["license"],

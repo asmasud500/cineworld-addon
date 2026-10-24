@@ -74,11 +74,9 @@ label{display:block;margin:13px 0 6px;color:#bac8df;font-size:13px;font-weight:6
  <section id="sources" class="hidden"><div class="card" id="sform"><h3>2. Add video links</h3>
   <div class="who none" id="who1">No movie chosen yet. Search above and press Choose.</div>
   <div class="mut" id="shosts"></div>
-  <label for="s_urls">Links, one per line. You can start a line with the quality: 4K, 1080p, 720p, 480p, 360p ...</label>
+  <label for="s_urls">Direct HTTPS video links from any host, one per line. Quality is optional (4K, 1080p, 720p, etc.).</label>
   <textarea id="s_urls" rows="5" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="1080p https://archive.org/download/item/movie.1080p.mkv&#10;720p https://archive.org/download/item/movie.720p.mp4&#10;https://archive.org/download/item/movie.mp4"></textarea>
   <label for="s_title">Label (optional)</label><input id="s_title" placeholder="e.g. Full movie">
-  <label for="s_evidence">Rights evidence URL (required for custom hosts)</label><input id="s_evidence" inputmode="url" autocapitalize="off" placeholder="https://official-site.example/license-or-rights-page">
-  <div class="mut">For additional hosts, configure PLAYBACK_ALLOWED_HOSTS on Render (comma-separated hostnames), then redeploy. Only add hosts where you have verified sharing rights.</div>
   <label for="s_lic">License</label><select id="s_lic"><option value="public-domain">Public domain</option><option value="cc0">CC0</option><option value="cc-by">CC BY</option><option value="cc-by-sa">CC BY-SA</option><option value="licensed">Licensed to me</option></select>
   <div class="chk"><input type="checkbox" id="s_ok"><label for="s_ok" style="margin:0;color:var(--txt)">I checked that I may share these videos.</label></div>
   <button class="pri" id="s_add">Add links</button><div class="msg" id="s_msg"></div></div>
@@ -155,7 +153,7 @@ function parseLinks(text){
 $('s_add').onclick=async()=>{if(!chosen)return say('s_msg','Choose a movie first: search above, then press Choose.');
  const links=parseLinks($('s_urls').value);if(!links.length)return say('s_msg','Paste at least one video link.');
  let done=0,last=null,problems=[],left=[];
- for(const l of links){try{last=await api('/api/admin/sources','POST',{movieId:chosen.id,title:$('s_title').value,url:l.url,quality:l.quality,license:$('s_lic').value,rightsEvidenceUrl:$('s_evidence').value.trim()||undefined,rightsConfirmed:$('s_ok').checked});done++}catch(e){problems.push(e.message);left.push(l.line)}}
+ for(const l of links){try{last=await api('/api/admin/sources','POST',{movieId:chosen.id,title:$('s_title').value,url:l.url,quality:l.quality,license:$('s_lic').value,rightsConfirmed:$('s_ok').checked});done++}catch(e){problems.push(e.message);left.push(l.line)}}
  $('s_urls').value=left.join('\\n');if(!done)$('s_ok').checked=$('s_ok').checked;
  const where=last&&last.placed?' Shown in: '+last.shownIn.join(', ')+'.':(last?' The movie could not be placed in a catalog (TMDB lookup failed). Check the TMDB key.':'');
  say('s_msg',(done?done+' added.'+where:'')+(problems.length?' '+problems.length+' refused: '+problems[0]:''),done>0&&!problems.length&&(!last||last.placed));

@@ -28,6 +28,11 @@ export interface Movie {
   poster?: string;
   background?: string;
   releaseDate?: string;
+  runtime?: number;
+  director?: string[];
+  cast?: string[];
+  trailerKey?: string;
+  rating?: number;
   imdbId?: string;
   categoryIds: CinemaCategoryId[];
   sourceIds: string[];
@@ -55,6 +60,10 @@ export const FEATURED_CATALOG_ID = "new-releases";
 export const FEATURED_CATALOG_NAME = "New Releases";
 export const FEATURED_LIMIT = 100;
 
+/** Automatic "upcoming" catalog (soonest first). */
+export const UPCOMING_CATALOG_ID = "coming-soon";
+export const UPCOMING_CATALOG_NAME = "Coming Soon";
+
 /** Exact release date when known, otherwise the first day of the release year (0 when unknown). */
 function releaseTime(movie: Movie): number {
   const exact = movie.releaseDate ? Date.parse(movie.releaseDate) : Number.NaN;
@@ -75,4 +84,17 @@ export function buildFeaturedFeed(lists: Movie[][], limit = FEATURED_LIMIT): Mov
   const unique = new Map<string, Movie>();
   for (const movie of interleaved) if (!unique.has(movie.imdbId ?? movie.id)) unique.set(movie.imdbId ?? movie.id, movie);
   return [...unique.values()].sort((a, b) => releaseTime(b) - releaseTime(a)).slice(0, limit);
+}
+
+export function hasGenre(movie: Movie, genre: string): boolean {
+  const wanted = genre.trim().toLocaleLowerCase();
+  return movie.genres.some((item) => item.toLocaleLowerCase() === wanted);
+}
+
+/** Upcoming films merged from several lists: soonest release first, unknown dates last, de-duplicated. */
+export function buildUpcomingFeed(lists: Movie[][], limit = FEATURED_LIMIT): Movie[] {
+  const unique = new Map<string, Movie>();
+  for (const movie of lists.flat()) if (!unique.has(movie.imdbId ?? movie.id)) unique.set(movie.imdbId ?? movie.id, movie);
+  const time = (movie: Movie) => (movie.releaseDate && !Number.isNaN(Date.parse(movie.releaseDate)) ? Date.parse(movie.releaseDate) : Number.POSITIVE_INFINITY);
+  return [...unique.values()].sort((a, b) => time(a) - time(b)).slice(0, limit);
 }

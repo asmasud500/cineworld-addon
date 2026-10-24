@@ -1,30 +1,36 @@
 import express from "express";
 import stremioAddonSdk from "stremio-addon-sdk";
 const { addonBuilder, getRouter } = stremioAddonSdk as typeof import("stremio-addon-sdk");
-import { CINEMA_CATEGORIES, FEATURED_CATALOG_ID, FEATURED_CATALOG_NAME, buildFeaturedFeed, getCatalog, searchCatalog } from "./catalog.js";
+import { CINEMA_CATEGORIES, FEATURED_CATALOG_ID, FEATURED_CATALOG_NAME, UPCOMING_CATALOG_ID, UPCOMING_CATALOG_NAME, buildFeaturedFeed, buildUpcomingFeed, getCatalog, hasGenre, searchCatalog } from "./catalog.js";
+import { createAdminRouter } from "./admin.js";
+import { applyOverrides, isHidden } from "./overrides.js";
+import { getReviewedSubtitles } from "./subtitles.js";
 import { getReviewedSources } from "./sources.js";
 import { getRememberedMovie, getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus, warmSeenMovies } from "./providers/upstream.js";
-import { getTmdbNewReleases, isTmdbConfigured, verifyForCategory } from "./providers/tmdb.js";
+import { GENRE_NAMES, enrichWithTmdbDetails, getTmdbNewReleases, getTmdbUpcoming, isTmdbConfigured, searchTmdbMovies, verifyForCategory } from "./providers/tmdb.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
 const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 
+function genreExtra() { return { name: "genre", options: [...GENRE_NAMES], isRequired: false }; }
+
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.3.2",
+  version: "0.4.0",
   name: "CineWorld",
   description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Playback is shown only for reviewed rights-cleared sources.",
   resources: ["catalog", "meta", "stream", "subtitles"],
   types: ["movie"],
   catalogs: [
     // First catalog = home hero / top row in Stremio and Nuvio.
-    { type: "movie", id: FEATURED_CATALOG_ID, name: FEATURED_CATALOG_NAME, extra: [{ name: "skip", isRequired: false }] },
+    { type: "movie", id: FEATURED_CATALOG_ID, name: FEATURED_CATALOG_NAME, extra: [genreExtra(), { name: "skip", isRequired: false }] },
+    { type: "movie", id: UPCOMING_CATALOG_ID, name: UPCOMING_CATALOG_NAME, extra: [genreExtra(), { name: "skip", isRequired: false }] },
     ...CINEMA_CATEGORIES.map((category) => ({
       type: "movie",
       id: category.id,
       name: category.name,
-      extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
+      extra: [genreExtra(), { name: "search", isRequired: false }, { name: "skip", isRequired: false }]
     }))
   ],
   behaviorHints: { configurable: false, configurationRequired: false }
@@ -46,31 +52,61 @@ function toMetaPreview(movie: Movie) {
 }
 
 function toMeta(movie: Movie) {
-  return { ...toMetaPreview(movie), ...(movie.imdbId ? { imdb_id: movie.imdbId } : {}), ...((movie.background ?? movie.poster) ? { background: movie.background ?? movie.poster } : {}) };
+  const background = movie.background ?? movie.poster;
+  const description = movie.rating ? `${movie.description}\n\nTMDB rating: ${movie.rating}/10` : movie.description;
+  return {
+    ...toMetaPreview(movie),
+    description,
+    ...(movie.imdbId ? { imdb_id: movie.imdbId } : {}),
+    ...(background ? { background } : {}),
+    ...(movie.releaseDate ? { released: new Date(movie.releaseDate).toISOString() } : {}),
+    ...(movie.runtime ? { runtime: `${movie.runtime} min` } : {}),
+    ...(movie.director?.length ? { director: movie.director } : {}),
+    ...(movie.cast?.length ? { cast: movie.cast } : {}),
+    ...(movie.trailerKey ? { trailers: [{ source: movie.trailerKey, type: "Trailer" }], trailerStreams: [{ title: `${movie.name} – Trailer`, ytId: movie.trailerKey }] } : {})
+  };
 }
 
 const FEED_TTL_MS = 10 * 60 * 1000;
 const FEED_EMPTY_TTL_MS = 60 * 1000;
-let feedCache: { expiresAt: number; movies: Movie[] } | null = null;
-let feedInFlight: Promise<Movie[]> | null = null;
+const FEED_KEYS_LIMIT = 40;
 
-async function buildFeed(): Promise<Movie[]> {
+/** Small cache with shared in-flight work: concurrent requests reuse one build, and a failed refresh keeps the last good result. */
+function cachedFeed(build: (genre?: string) => Promise<Movie[]>) {
+  const store = new Map<string, { expiresAt: number; movies: Movie[] }>();
+  const inFlight = new Map<string, Promise<Movie[]>>();
+  return async (genre?: string): Promise<Movie[]> => {
+    const key = genre?.toLocaleLowerCase() ?? "";
+    const hit = store.get(key);
+    if (hit && hit.expiresAt > Date.now()) return hit.movies;
+    let work = inFlight.get(key);
+    if (!work) {
+      work = build(genre).then((movies) => {
+        if (movies.length || !store.has(key)) {
+          if (store.size >= FEED_KEYS_LIMIT) store.clear();
+          store.set(key, { movies, expiresAt: Date.now() + (movies.length ? FEED_TTL_MS : FEED_EMPTY_TTL_MS) });
+        }
+        return store.get(key)?.movies ?? movies;
+      }).finally(() => { inFlight.delete(key); });
+      inFlight.set(key, work);
+    }
+    return work;
+  };
+}
+
+const getFeed = cachedFeed(async (genre) => {
   const lists = await Promise.all(CINEMA_CATEGORIES.flatMap((category) => [
-    getTmdbNewReleases(category.id).catch(() => [] as Movie[]),
+    getTmdbNewReleases(category.id, 0, genre).catch(() => [] as Movie[]),
     getUpstreamCatalog(category.id).then((list) => verifyForCategory(list, category.id, 12)).catch(() => [] as Movie[])
   ]));
-  return buildFeaturedFeed([getCatalog(), ...lists]);
-}
+  const feed = buildFeaturedFeed([getCatalog(), ...lists]);
+  return genre ? feed.filter((movie) => hasGenre(movie, genre)) : feed;
+});
 
-/** One shared, cached feed: concurrent requests reuse the same work, and a failed refresh keeps the last good feed. */
-async function getFeed(): Promise<Movie[]> {
-  if (feedCache && feedCache.expiresAt > Date.now()) return feedCache.movies;
-  feedInFlight ??= buildFeed().then((movies) => {
-    if (movies.length || !feedCache) feedCache = { movies, expiresAt: Date.now() + (movies.length ? FEED_TTL_MS : FEED_EMPTY_TTL_MS) };
-    return feedCache?.movies ?? movies;
-  }).finally(() => { feedInFlight = null; });
-  return feedInFlight;
-}
+const getUpcoming = cachedFeed(async (genre) => {
+  const lists = await Promise.all(CINEMA_CATEGORIES.map((category) => getTmdbUpcoming(category.id, genre).catch(() => [] as Movie[])));
+  return buildUpcomingFeed(lists);
+});
 
 const WARM_INTERVAL_MS = 5 * 60 * 1000;
 let warmInFlight: Promise<void> | null = null;
@@ -91,42 +127,57 @@ function categoryIdFrom(value: string): CinemaCategoryId {
   return CINEMA_CATEGORIES.some((category) => category.id === value) ? value as CinemaCategoryId : "world";
 }
 
-builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { search?: string; skip?: string } }) => {
+function genreFrom(value?: string): string | undefined {
+  const wanted = value?.trim().toLocaleLowerCase();
+  return GENRE_NAMES.find((name) => name.toLocaleLowerCase() === wanted);
+}
+
+builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { search?: string; skip?: string; genre?: string } }) => {
   const skip = Math.max(0, Number.parseInt(extra?.skip ?? "0", 10) || 0);
+  const genre = genreFrom(extra?.genre);
   if (id === FEATURED_CATALOG_ID) {
     // Automatic feed: newest movies across every category (cached for 10 minutes).
-    const feed = await getFeed();
+    const feed = applyOverrides(await getFeed(genre));
     return { metas: feed.slice(skip, skip + 100).map(toMetaPreview) };
   }
+  if (id === UPCOMING_CATALOG_ID) {
+    const upcoming = applyOverrides(await getUpcoming(genre));
+    return { metas: upcoming.slice(skip, skip + 100).map(toMetaPreview) };
+  }
   const categoryId = categoryIdFrom(id);
+  const search = extra?.search?.trim().slice(0, 100) || undefined;
   const [fresh, upstream] = await Promise.all([
-    extra?.search ? Promise.resolve([] as Movie[]) : getTmdbNewReleases(categoryId, skip).catch(() => [] as Movie[]),
-    getUpstreamCatalog(categoryId, skip, extra?.search).then((list) => verifyForCategory(list, categoryId)).catch(() => [] as Movie[])
+    (search ? searchTmdbMovies(search, categoryId) : getTmdbNewReleases(categoryId, skip, genre)).catch(() => [] as Movie[]),
+    getUpstreamCatalog(categoryId, skip, search).then((list) => verifyForCategory(list, categoryId)).catch(() => [] as Movie[])
   ]);
   const remote = [...fresh, ...upstream]; // brand-new releases first
-  const local = extra?.search ? searchCatalog(extra.search) : getCatalog(id).slice(skip, skip + 100);
+  const local = search ? searchCatalog(search) : getCatalog(id).slice(skip, skip + 100);
   const unique = new Map<string, Movie>();
   for (const movie of [...local, ...remote]) unique.set(movie.imdbId ?? movie.id, movie);
-  return { metas: [...unique.values()].slice(0, 100).map(toMetaPreview) };
+  const movies = [...unique.values()].filter((movie) => !genre || hasGenre(movie, genre));
+  return { metas: applyOverrides(movies).slice(0, 100).map(toMetaPreview) };
 });
 
 builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => {
-  if (type !== "movie" || !id || id.length > 120) return { meta: null };
+  if (type !== "movie" || !id || id.length > 120 || isHidden(id)) return { meta: null };
+  const answer = async (movie: Movie) => ({ meta: toMeta(await enrichWithTmdbDetails(movie).catch(() => movie)) });
   const local = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
-  if (local) return { meta: toMeta(local) };
+  if (local) return answer(local);
   // 1) Anything we already listed in a catalog is answered directly.
   const seen = getRememberedMovie(id);
-  if (seen) return { meta: toMeta(seen) };
+  if (seen) return answer(seen);
   // 2) Ask the upstream add-ons for details.
   const remote = await getUpstreamMeta(id, type);
-  if (remote) return { meta: toMeta(remote) };
+  if (remote) return answer(remote);
   // 3) Cold start: rebuild the remembered set from the catalogs and try again.
   await warmCatalogs();
   const warmed = getRememberedMovie(id);
-  return { meta: warmed ? toMeta(warmed) : null };
+  return warmed ? answer(warmed) : { meta: null };
 });
 
-builder.defineSubtitlesHandler(() => Promise.resolve({ subtitles: [] }));
+builder.defineSubtitlesHandler(({ id }: { id: string }) => Promise.resolve({
+  subtitles: getReviewedSubtitles(id).map((record) => ({ id: record.id, url: record.url, lang: record.lang }))
+}));
 
 builder.defineStreamHandler(({ id }: { id: string }) => {
   const movie = getCatalog().find((item) => (item.imdbId ?? item.id) === id);
@@ -141,6 +192,7 @@ builder.defineStreamHandler(({ id }: { id: string }) => {
 const addonInterface = builder.getInterface();
 const app = express();
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
 app.use((req, res, next) => { res.setHeader("access-control-allow-origin", "*"); res.setHeader("access-control-allow-methods", "GET, OPTIONS"); res.setHeader("access-control-allow-headers", "content-type"); if (req.method === "OPTIONS") { res.status(204).end(); return; } next(); });
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", service: "cineworld-addon", version: manifest.version, tmdbNewReleases: isTmdbConfigured(), ...getUpstreamSourceStatus() });
@@ -148,12 +200,23 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/catalog", (_req, res) => {
   res.json({ categories: CINEMA_CATEGORIES, movies: getCatalog() });
 });
+app.use(createAdminRouter(getFeed));
 app.use("/", getRouter(addonInterface));
 app.use((_req, res) => { res.status(404).json({ error: "not_found" }); });
 
 const server = app.listen(port, "0.0.0.0", () => {
   console.log(JSON.stringify({ level: "info", event: "server_started", port, publicBaseUrl }));
 });
+
+// Free hosts put idle services to sleep, which makes the first request slow. Pinging our own public
+// address every 10 minutes keeps the service awake. Render provides RENDER_EXTERNAL_URL automatically.
+const keepAliveUrl = process.env.RENDER_EXTERNAL_URL ?? publicBaseUrl;
+if (process.env.KEEP_ALIVE !== "false" && /^https:\/\//i.test(keepAliveUrl) && !/localhost|127\.0\.0\.1/.test(keepAliveUrl)) {
+  const timer = setInterval(() => {
+    fetch(new URL("/api/health", keepAliveUrl), { signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
+  }, 10 * 60 * 1000);
+  timer.unref();
+}
 
 function shutdown(signal: string) {
   console.log(JSON.stringify({ level: "info", event: "shutdown", signal }));

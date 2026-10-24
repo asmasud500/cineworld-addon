@@ -52,6 +52,16 @@ Set `TMDB_API_KEY` (free v3 key from themoviedb.org) or `TMDB_READ_ACCESS_TOKEN`
 
 Each category row shows only films that really belong to it. Films from the upstream add-ons are checked against TMDB by IMDb id (original language, plus origin country for Bangladesh / West Bengal / Hollywood) and dropped if they do not match or cannot be verified. Without a TMDB key, ambiguous Bengali films are hidden from the Bangladesh row. "World Cinema" is intentionally unfiltered.
 
+## More features (v0.4)
+
+- **Search with TMDB:** category search also queries TMDB, limited to that category's language/country.
+- **Movie details:** cast, director, runtime, TMDB rating and a YouTube trailer (needs the TMDB key).
+- **Coming Soon:** second catalog with films releasing in the next 120 days, soonest first.
+- **Genre filter:** every catalog has a `genre` filter (Action, Comedy, Drama, ...).
+- **Subtitles:** `src/subtitles.ts` is a reviewed-only registry, like playback sources. It is empty until an editor adds records with rights evidence; only `.srt`/`.vtt` files on allowlisted hosts are served.
+- **Stay awake:** on free hosts the add-on pings its own public URL every 10 minutes (uses `RENDER_EXTERNAL_URL` on Render; turn off with `KEEP_ALIVE=false`).
+- **Admin (pin/hide):** set `ADMIN_API_TOKEN`, then open `/admin`, enter the token and pin or hide films. Without a token the admin is off (404). Changes are saved to `data/overrides.json`, which lasts until the next redeploy on hosts with a temporary disk; for permanent choices put film ids in `PINNED_MOVIE_IDS` / `HIDDEN_MOVIE_IDS` (comma-separated).
+
 ## Legal playback policy
 
 A source must be added to `src/sources.ts` only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. Metadata-provider results are for discovery only and never create playback links. The catalog deliberately has **no titles or playback streams by default** until verified metadata and source rights are curated. This avoids implying that a film is public domain merely because it is old or appears on an archive.

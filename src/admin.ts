@@ -133,7 +133,20 @@ $('find').onclick=async()=>{const q=$('q').value.trim();if(!q)return;const box=$
  try{const d=await api('/api/admin/search?q='+encodeURIComponent(q));box.textContent='';if(!d.movies.length)box.textContent='No movie found.';
   for(const m of d.movies){const row=itemImg(m.poster,label(m),m.id,m.id,btn('Choose','pri',()=>choose(m)));row.dataset.id=m.id;box.append(row)}}catch(e){box.textContent=e.message}};
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter')$('find').click()});
-function parseLinks(text){return text.split(/\\r?\\n/).map(l=>l.trim()).filter(Boolean).map(l=>{const m=l.match(/^(4k|uhd|2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?|auto|hls)\\s*[:|-]?\\s+(https?:\\/\\/\\S+)$/i);return m?{line:l,quality:m[1],url:m[2]}:{line:l,quality:'',url:l}})}
+function parseLinks(text){
+ const lines=text.split(/\\r?\\n/).map(l=>l.trim()).filter(Boolean), out=[];
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i];
+  const qualityOnly=line.match(/^(4k|uhd|2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?|auto|hls)$/i);
+  if(qualityOnly && lines[i+1]){
+   out.push({line:qualityOnly[1]+' '+lines[i+1],quality:qualityOnly[1],url:lines[++i]});
+   continue;
+  }
+  const m=line.match(/^(4k|uhd|2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?|auto|hls)\\s*[:|-]?\\s+(https?:\\/\\/\\S+)$/i);
+  out.push(m?{line,quality:m[1],url:m[2]}:{line,quality:'',url:line});
+ }
+ return out;
+}
 $('s_add').onclick=async()=>{if(!chosen)return say('s_msg','Choose a movie first: search above, then press Choose.');
  const links=parseLinks($('s_urls').value);if(!links.length)return say('s_msg','Paste at least one video link.');
  let done=0,last=null,problems=[],left=[];

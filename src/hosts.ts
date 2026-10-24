@@ -15,7 +15,7 @@ const BUILTIN_SUFFIX_HOSTS = [".archive.org"];
  */
 const CUSTOM_HOSTS = (process.env.PLAYBACK_ALLOWED_HOSTS ?? "")
   .split(",")
-  .map((host) => host.trim().toLowerCase().replace(/^https?:\\/\\//, "").replace(/\\/$/, ""))
+  .map((host) => host.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, ""))
   .filter((host) => /^[a-z0-9.-]+$/.test(host) && !host.includes(".."));
 const EXACT_HOSTS = [...BUILTIN_EXACT_HOSTS, ...CUSTOM_HOSTS];
 const SUFFIX_HOSTS = BUILTIN_SUFFIX_HOSTS;

@@ -1,7 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import express from "express";
 import type { Request, Response, Router } from "express";
+import { CINEMA_CATEGORIES } from "./catalog.js";
 import type { Movie } from "./catalog.js";
+import { getCuratedMovie, listCurated, replaceCurated } from "./curated.js";
+import { getRememberedMovie } from "./providers/upstream.js";
 import { getOverrides, movieKey, setOverrides } from "./overrides.js";
 import { LEGAL_SOURCES, PLAYBACK_HOSTS, addLegalSource, removeLegalSource, replaceLegalSources } from "./sources.js";
 import { SUBTITLES, SUBTITLE_HOSTS, addSubtitle, removeSubtitle, replaceSubtitles } from "./subtitles.js";
@@ -51,12 +54,13 @@ label{display:block;margin:10px 0 4px;color:var(--mut);font-size:14px}.row{displ
 .item{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}
 .item .t{flex:1;min-width:0;overflow-wrap:anywhere}.mut{color:var(--mut);font-size:14px}.msg{margin:8px 0;min-height:1.2em}.ok{color:var(--ok)}.bad{color:var(--bad)}
 .p{color:#6cf}.h{color:var(--bad)}.chk{display:flex;gap:10px;align-items:flex-start;margin:12px 0}.chk input{width:auto;margin-top:4px}
-.hidden{display:none}#sel{margin-top:8px}
+.hidden{display:none}#sel{margin-top:8px}img.pt{width:40px;height:60px;object-fit:cover;border-radius:6px;background:#222}
 </style></head><body>
 <header><h1>CineWorld admin</h1></header>
 <main>
 <div class="card" id="login"><label for="tok">Admin token</label><div class="row"><input id="tok" type="password" autocomplete="off"><button class="pri" id="go">Open</button></div><div class="msg bad" id="lmsg"></div></div>
 <div id="app" class="hidden">
+ <div class="card hidden bad" id="tmdbwarn">TMDB is not connected (set TMDB_API_KEY on the host). Search will find nothing and added films cannot be placed in the catalog.</div>
  <div class="card"><label for="q">Find a movie</label><div class="row"><input id="q" placeholder="Movie name"><button id="find">Search</button></div>
   <div id="res"></div><div id="sel" class="mut">No movie chosen.</div></div>
  <div class="tabs"><button data-tab="movies" class="on">Movies</button><button data-tab="sources">Sources</button><button data-tab="subs">Subtitles</button><button data-tab="backup">Backup</button></div>
@@ -92,7 +96,8 @@ async function api(path,method,body){const r=await fetch(path,{method:method||'G
  const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(r.status===401?'Wrong token':r.status===429?'Too many tries, wait a few minutes':(d.reason||'Error '+r.status));return d}
 function say(id,t,ok){const e=$(id);e.textContent=t;e.className='msg '+(ok?'ok':'bad')}
 function btn(label,cls,fn){const b=document.createElement('button');b.textContent=label;if(cls)b.className=cls;b.onclick=fn;return b}
-function item(title,sub,...btns){const d=document.createElement('div');d.className='item';const t=document.createElement('div');t.className='t';t.textContent=title;
+function item(title,sub,...btns){return itemImg(null,title,sub,...btns)}
+function itemImg(img,title,sub,...btns){const d=document.createElement('div');d.className='item';if(img){const i=document.createElement('img');i.className='pt';i.src=img;i.alt='';i.loading='lazy';d.append(i)}const t=document.createElement('div');t.className='t';t.textContent=title;
  if(sub){const s=document.createElement('div');s.className='mut';s.textContent=sub;t.append(s)}d.append(t,...btns);return d}
 function choose(m){chosen=m;$('sel').textContent='Chosen: '+m.name+(m.year?' ('+m.year+')':'')+' · id '+m.id}
 async function saveOv(){ov=await api('/api/admin/overrides','PUT',ov);await loadFeed()}
@@ -103,35 +108,45 @@ async function loadFeed(){const d=await api('/api/admin/feed');const box=$('feed
   btn('Use',null,()=>choose(m)),btn(ov.pinned.includes(m.id)?'Unpin':'Pin',null,()=>toggle('pinned',m.id)),btn(ov.hidden.includes(m.id)?'Unhide':'Hide',null,()=>toggle('hidden',m.id)));box.append(row)}}
 async function loadSources(){const d=await api('/api/admin/sources');const box=$('slist');box.textContent='';
  if(!d.sources.length)box.textContent='No sources added yet.';
- for(const s of d.sources)box.append(item(s.title+' · '+s.license,s.movieId+' · '+s.host,btn('Delete','del',async()=>{if(confirm('Delete this source?')){await api('/api/admin/sources/'+encodeURIComponent(s.id),'DELETE');loadSources()}})))}
+ for(const s of d.sources)box.append(item((s.movieName||s.movieId)+' · '+s.title,s.license+' · '+s.host+(s.movieName?' · '+s.movieId:''),btn('Delete','del',async()=>{if(confirm('Delete this source?')){await api('/api/admin/sources/'+encodeURIComponent(s.id),'DELETE');loadSources()}})))}
 async function loadSubs(){const d=await api('/api/admin/subtitles');const box=$('ulist');box.textContent='';
  if(!d.subtitles.length)box.textContent='No subtitles added yet.';
  for(const s of d.subtitles)box.append(item(s.lang+' · '+s.license,s.movieId+' · '+s.host,btn('Delete','del',async()=>{if(confirm('Delete this subtitle?')){await api('/api/admin/subtitles/'+encodeURIComponent(s.id),'DELETE');loadSubs()}})))}
 async function open_(){try{sessionStorage.setItem('t',tok());const c=await api('/api/admin/config');ov=await api('/api/admin/overrides');
  $('login').classList.add('hidden');$('app').classList.remove('hidden');
- $('shosts').textContent='Allowed hosts: '+c.playbackHosts.join(', ');$('uhosts').textContent='Allowed hosts: '+c.subtitleHosts.join(', ');
+ $('tmdbwarn').classList.toggle('hidden',!!c.tmdb);$('shosts').textContent='Allowed hosts: '+c.playbackHosts.join(', ');$('uhosts').textContent='Allowed hosts: '+c.subtitleHosts.join(', ');
  await Promise.all([loadFeed(),loadSources(),loadSubs()])}catch(e){$('lmsg').textContent=e.message}}
 $('go').onclick=open_;$('tok').value=sessionStorage.getItem('t')||'';if($('tok').value)open_();
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
  for(const s of ['movies','sources','subs','backup'])$(s).classList.toggle('hidden',s!==b.dataset.tab)});
 $('find').onclick=async()=>{const q=$('q').value.trim();if(!q)return;const box=$('res');box.textContent='Searching...';
  try{const d=await api('/api/admin/search?q='+encodeURIComponent(q));box.textContent='';if(!d.movies.length)box.textContent='No movie found.';
-  for(const m of d.movies)box.append(item(m.name+(m.year?' ('+m.year+')':''),m.id,btn('Choose','pri',()=>choose(m))))}catch(e){box.textContent=e.message}};
+  for(const m of d.movies)box.append(itemImg(m.poster,m.name+(m.year?' ('+m.year+')':''),m.id,btn('Choose','pri',()=>choose(m))))}catch(e){box.textContent=e.message}};
 $('s_add').onclick=async()=>{if(!chosen)return say('s_msg','Choose a movie first (search above).');
- try{await api('/api/admin/sources','POST',{movieId:chosen.id,title:$('s_title').value,url:$('s_url').value,license:$('s_lic').value,rightsEvidenceUrl:$('s_ev').value,territory:$('s_ter').value,rightsConfirmed:$('s_ok').checked});
-  say('s_msg','Added.',true);$('s_url').value='';$('s_ok').checked=false;loadSources()}catch(e){say('s_msg',e.message)}};
+ try{const r=await api('/api/admin/sources','POST',{movieId:chosen.id,title:$('s_title').value,url:$('s_url').value,license:$('s_lic').value,rightsEvidenceUrl:$('s_ev').value,territory:$('s_ter').value,rightsConfirmed:$('s_ok').checked});
+  say('s_msg',r.placed?'Added. Now shown in: '+r.shownIn.join(', ')+'.':'Added, but the movie could not be placed in a catalog (TMDB lookup failed). Check the TMDB key.',r.placed);$('s_url').value='';$('s_ok').checked=false;loadSources()}catch(e){say('s_msg',e.message)}};
 $('u_add').onclick=async()=>{if(!chosen)return say('u_msg','Choose a movie first (search above).');
  try{await api('/api/admin/subtitles','POST',{movieId:chosen.id,lang:$('u_lang').value,url:$('u_url').value,license:$('u_lic').value,rightsEvidenceUrl:$('u_ev').value,rightsConfirmed:$('u_ok').checked});
   say('u_msg','Added.',true);$('u_url').value='';$('u_ok').checked=false;loadSubs()}catch(e){say('u_msg',e.message)}};
 $('dl').onclick=async()=>{try{const d=await api('/api/admin/backup');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='cineworld-backup.json';a.click();say('b_msg','Backup downloaded.',true)}catch(e){say('b_msg',e.message)}};
 $('restore').onclick=async()=>{try{const data=JSON.parse($('rs').value);if(!confirm('Replace the current lists with this backup?'))return;const r=await api('/api/admin/restore','POST',data);
- say('b_msg','Restored: '+r.sources+' sources, '+r.subtitles+' subtitles.',true);ov=await api('/api/admin/overrides');loadFeed();loadSources();loadSubs()}catch(e){say('b_msg',e.message)}};
+ say('b_msg','Restored: '+r.sources+' sources, '+r.subtitles+' subtitles, '+r.movies+' movies.',true);ov=await api('/api/admin/overrides');loadFeed();loadSources();loadSubs()}catch(e){say('b_msg',e.message)}};
 </script></body></html>`;
+
+export interface PlaceResult { placed: boolean; categoryIds: string[]; name?: string }
 
 export interface AdminDeps {
   getFeed: () => Promise<Movie[]>;
   searchMovies: (query: string) => Promise<Movie[]>;
+  /** Looks the film up on TMDB and puts it in the catalog rows that match its language/country. */
+  placeMovie: (movieId: string) => Promise<PlaceResult>;
+  /** Removes films that lost their last source and places films that have a source but are not in the catalog yet. */
+  syncCatalog: () => Promise<void>;
+  tmdbConfigured: () => boolean;
 }
+
+const categoryLabel = (id: string) => CINEMA_CATEGORIES.find((category) => category.id === id)?.name ?? id;
+const movieName = (id: string) => getCuratedMovie(id)?.name ?? getRememberedMovie(id)?.name;
 
 export function createAdminRouter(deps: AdminDeps): Router {
   const router = express.Router();
@@ -147,12 +162,12 @@ export function createAdminRouter(deps: AdminDeps): Router {
   // The page itself holds no data and no secrets; every API call needs the token.
   router.get("/admin", (_req, res) => {
     if (!process.env.ADMIN_API_TOKEN?.trim()) { res.status(404).json({ error: "not_found" }); return; }
-    res.setHeader("content-security-policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'");
+    res.setHeader("content-security-policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src https://image.tmdb.org data:; base-uri 'none'; form-action 'none'");
     res.setHeader("cache-control", "no-store");
     res.type("html").send(PAGE);
   });
 
-  router.get("/api/admin/config", guarded((_req, res) => { res.json({ playbackHosts: PLAYBACK_HOSTS, subtitleHosts: SUBTITLE_HOSTS }); }));
+  router.get("/api/admin/config", guarded((_req, res) => { res.json({ playbackHosts: PLAYBACK_HOSTS, subtitleHosts: SUBTITLE_HOSTS, tmdb: deps.tmdbConfigured() }); }));
   router.get("/api/admin/overrides", guarded((_req, res) => { res.json(getOverrides()); }));
   router.put("/api/admin/overrides", auth, express.json({ limit: "100kb" }), guarded((req, res) => { res.json(setOverrides(req.body)); }));
   router.get("/api/admin/feed", guarded(async (_req, res) => {
@@ -162,17 +177,25 @@ export function createAdminRouter(deps: AdminDeps): Router {
   router.get("/api/admin/search", guarded(async (req, res) => {
     const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
     const movies = query ? await deps.searchMovies(query) : [];
-    res.json({ movies: movies.slice(0, 12).map((movie) => ({ id: movieKey(movie), name: movie.name, year: movie.releaseInfo })) });
+    res.json({ movies: movies.slice(0, 12).map((movie) => ({ id: movieKey(movie), name: movie.name, year: movie.releaseInfo, poster: movie.poster ?? null })) });
   }));
 
-  router.get("/api/admin/sources", guarded((_req, res) => { res.json({ sources: LEGAL_SOURCES }); }));
-  router.post("/api/admin/sources", auth, express.json({ limit: "20kb" }), guarded((req, res) => {
+  router.get("/api/admin/sources", guarded((_req, res) => { res.json({ sources: LEGAL_SOURCES.map((source) => ({ ...source, movieName: movieName(source.movieId) ?? null })) }); }));
+  router.post("/api/admin/sources", auth, express.json({ limit: "20kb" }), guarded(async (req, res) => {
     const result = addLegalSource(req.body ?? {});
     if (!result.ok) { res.status(400).json({ error: "rejected", reason: result.reason }); return; }
-    res.status(201).json(result.source);
+    // The source is saved; now show the film in the catalog rows it belongs to (best effort: needs TMDB).
+    const placement = await deps.placeMovie(result.source.movieId).catch((): PlaceResult => ({ placed: false, categoryIds: [] }));
+    res.status(201).json({
+      ...result.source,
+      placed: placement.placed,
+      movieName: placement.name ?? null,
+      shownIn: placement.placed ? ["New Releases", ...placement.categoryIds.map(categoryLabel)] : []
+    });
   }));
-  router.delete("/api/admin/sources/:id", guarded((req, res) => {
+  router.delete("/api/admin/sources/:id", guarded(async (req, res) => {
     if (!removeLegalSource(String(req.params.id))) { res.status(404).json({ error: "not_found" }); return; }
+    await deps.syncCatalog().catch(() => undefined); // a film with no source left leaves the catalog
     res.json({ ok: true });
   }));
 
@@ -188,13 +211,17 @@ export function createAdminRouter(deps: AdminDeps): Router {
   }));
 
   router.get("/api/admin/backup", guarded((_req, res) => {
-    res.json({ overrides: getOverrides(), sources: LEGAL_SOURCES, subtitles: SUBTITLES });
+    res.json({ overrides: getOverrides(), sources: LEGAL_SOURCES, subtitles: SUBTITLES, movies: listCurated() });
   }));
   // Restore re-validates every record, so a backup cannot smuggle in a link that the panel itself would refuse.
-  router.post("/api/admin/restore", auth, express.json({ limit: "2mb" }), guarded((req, res) => {
-    const body = (req.body ?? {}) as { overrides?: unknown; sources?: unknown; subtitles?: unknown };
+  router.post("/api/admin/restore", auth, express.json({ limit: "2mb" }), guarded(async (req, res) => {
+    const body = (req.body ?? {}) as { overrides?: unknown; sources?: unknown; subtitles?: unknown; movies?: unknown };
     if (body.overrides !== undefined) setOverrides(body.overrides);
-    res.json({ sources: replaceLegalSources(body.sources ?? []), subtitles: replaceSubtitles(body.subtitles ?? []), overrides: getOverrides() });
+    const sources = replaceLegalSources(body.sources ?? []);
+    const subtitles = replaceSubtitles(body.subtitles ?? []);
+    replaceCurated(body.movies ?? []);
+    await deps.syncCatalog().catch(() => undefined); // drops films without a source, re-places films missing from the backup
+    res.json({ sources, subtitles, movies: listCurated().length, overrides: getOverrides() });
   }));
   // Malformed or oversized JSON gets a short JSON answer instead of a stack trace.
   router.use((_err: unknown, _req: Request, res: Response, _next: () => void) => { res.status(400).json({ error: "bad_request" }); });

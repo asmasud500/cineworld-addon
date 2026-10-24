@@ -306,3 +306,47 @@ export async function getWatchOptions(id: string): Promise<WatchOption[]> {
   }
   return options;
 }
+
+/** Which catalog rows a film belongs to, from its original language and origin countries. Falls back to World Cinema. */
+export function categoriesFor(language: string | undefined, countries: string[] = []): CinemaCategoryId[] {
+  const matches = (Object.keys(CATEGORY_FILTERS) as CinemaCategoryId[]).filter((id) => {
+    const filter = CATEGORY_FILTERS[id];
+    if (!filter.language) return false; // "world" is only the fallback
+    if (filter.language !== language) return false;
+    return !filter.country || countries.includes(filter.country);
+  });
+  return matches.length ? matches : ["world"];
+}
+
+type TmdbCard = {
+  title?: string; overview?: string; release_date?: string; poster_path?: string | null; backdrop_path?: string | null;
+  genres?: Array<{ name?: string }>; original_language?: string; runtime?: number | null;
+  origin_country?: string[]; production_countries?: Array<{ iso_3166_1?: string }>;
+};
+
+/** Full catalog card for one film (title, poster, genres, year) plus the catalog rows it belongs to. Used when a source is added. */
+export async function getTmdbMovieCard(id: string): Promise<Movie | null> {
+  if (!isTmdbConfigured()) return null;
+  const tmdbId = await tmdbIdFor(id);
+  if (!tmdbId) return null;
+  const details = await tmdbGet<TmdbCard>(`movie/${tmdbId}`, {}, EXTERNAL_ID_TTL_MS);
+  const name = details?.title?.trim();
+  if (!details || !name) return null;
+  const countries = details.origin_country ?? details.production_countries?.map((c) => c.iso_3166_1 ?? "") ?? [];
+  const year = details.release_date?.slice(0, 4) ?? "";
+  return {
+    id,
+    type: "movie",
+    name,
+    description: details.overview?.trim() || "Description not available yet.",
+    releaseInfo: year,
+    ...(details.release_date ? { releaseDate: details.release_date } : {}),
+    genres: (details.genres ?? []).map((g) => g.name).filter((g): g is string => Boolean(g)),
+    ...(details.poster_path ? { poster: `${IMAGE}w500${details.poster_path}` } : {}),
+    ...(details.backdrop_path ? { background: `${IMAGE}w1280${details.backdrop_path}` } : {}),
+    ...(details.runtime ? { runtime: details.runtime } : {}),
+    ...(/^tt\d+$/.test(id) ? { imdbId: id } : {}),
+    categoryIds: categoriesFor(details.original_language, countries),
+    sourceIds: []
+  };
+}

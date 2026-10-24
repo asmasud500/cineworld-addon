@@ -5,6 +5,7 @@ vi.hoisted(() => {
   process.env.SOURCES_FILE = "/tmp/cineworld-test/sources.json";
   process.env.SUBTITLES_FILE = "/tmp/cineworld-test/subtitles.json";
   process.env.OVERRIDES_FILE = "/tmp/cineworld-test/overrides.json";
+  process.env.CURATED_FILE = "/tmp/cineworld-test/movies.json";
 });
 import type { AddressInfo } from "node:net";
 import express from "express";
@@ -118,7 +119,7 @@ describe("admin API", () => {
   let base = "";
   beforeEach(async () => {
     process.env.ADMIN_API_TOKEN = "secret-token";
-    app.use(createAdminRouter({ getFeed: async () => [mk("tt1", { name: "One" })], searchMovies: async () => [mk("tt2", { name: "Two" })] }));
+    app.use(createAdminRouter({ getFeed: async () => [mk("tt1", { name: "One" })], searchMovies: async () => [mk("tt2", { name: "Two" })], placeMovie: async () => ({ placed: false, categoryIds: [] }), syncCatalog: async () => undefined, tmdbConfigured: () => true }));
     await new Promise<void>((resolve) => { server = app.listen(0, "127.0.0.1", () => resolve()); });
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -242,7 +243,7 @@ describe("admin API for sources", () => {
   const headers = { authorization: "Bearer secret-token", "content-type": "application/json" };
   beforeEach(async () => {
     process.env.ADMIN_API_TOKEN = "secret-token";
-    app.use(createAdminRouter({ getFeed: async () => [mk("tt1", { name: "One" })], searchMovies: async (q) => [mk("tt2", { name: `Found ${q}` })] }));
+    app.use(createAdminRouter({ getFeed: async () => [mk("tt1", { name: "One" })], searchMovies: async (q) => [mk("tt2", { name: `Found ${q}` })], placeMovie: async () => ({ placed: false, categoryIds: [] }), syncCatalog: async () => undefined, tmdbConfigured: () => true }));
     await new Promise<void>((resolve) => { server = app.listen(0, "127.0.0.1", () => resolve()); });
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -267,5 +268,129 @@ describe("admin API for sources", () => {
     expect(((await bad.json()) as { reason: string }).reason).toContain("allowlist");
     expect((await fetch(`${base}/api/admin/sources`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(401);
     expect((await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: "{not json" })).status).toBe(400);
+  });
+});
+
+import { categoriesFor, getTmdbMovieCard } from "../src/providers/tmdb.js";
+import { getCuratedMovie, getCuratedMovies, listCurated, pruneCurated, replaceCurated, sanitizeMovie, upsertCurated } from "../src/curated.js";
+
+describe("placing a film in the right catalog rows", () => {
+  it("maps language and country to catalog rows, falling back to World Cinema", () => {
+    expect(categoriesFor("bn", ["BD"])).toEqual(["bd-bengali"]);
+    expect(categoriesFor("bn", ["IN"])).toEqual(["in-bengali"]);
+    expect(categoriesFor("hi", ["IN"])).toEqual(["bollywood"]);
+    expect(categoriesFor("ta")).toEqual(["tamil"]);
+    expect(categoriesFor("en", ["US"])).toEqual(["hollywood"]);
+    expect(categoriesFor("en", ["GB"])).toEqual(["world"]);
+    expect(categoriesFor("bn", ["NP"])).toEqual(["world"]);
+    expect(categoriesFor(undefined)).toEqual(["world"]);
+  });
+
+  describe("TMDB movie card", () => {
+    beforeEach(() => { process.env.TMDB_API_KEY = "k"; });
+    afterEach(() => { delete process.env.TMDB_API_KEY; vi.unstubAllGlobals(); });
+
+    it("builds a card from TMDB details with the id the editor chose", async () => {
+      vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/movie/321?")) return new Response(JSON.stringify({
+          title: "Dhakar Golpo", overview: "A story.", release_date: "2026-09-12", poster_path: "/p.jpg", backdrop_path: "/b.jpg",
+          genres: [{ name: "Drama" }, { name: "Romance" }], original_language: "bn", origin_country: ["BD"], runtime: 118
+        }), { status: 200 });
+        return new Response("no", { status: 404 });
+      }));
+      const card = await getTmdbMovieCard("tmdb:321");
+      expect(card).toMatchObject({ id: "tmdb:321", name: "Dhakar Golpo", releaseInfo: "2026", genres: ["Drama", "Romance"], categoryIds: ["bd-bengali"], runtime: 118 });
+      expect(card?.poster).toContain("/w500/p.jpg");
+      expect(card?.imdbId).toBeUndefined();
+    });
+
+    it("returns null without a key or when TMDB does not know the film", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("no", { status: 404 })));
+      expect(await getTmdbMovieCard("tmdb:999")).toBeNull();
+      delete process.env.TMDB_API_KEY;
+      expect(await getTmdbMovieCard("tmdb:321")).toBeNull();
+    });
+  });
+});
+
+describe("curated films", () => {
+  afterEach(() => { replaceCurated([]); });
+  const card = (id: string, cats: string[], extra: Record<string, unknown> = {}) => ({ id, type: "movie", name: `Film ${id}`, description: "d", releaseInfo: "2026", genres: ["Drama"], categoryIds: cats, sourceIds: [], ...extra });
+
+  it("returns films per catalog row, newest added first, and searches by name", () => {
+    upsertCurated(sanitizeMovie(card("tt1", ["bd-bengali"]))!);
+    upsertCurated(sanitizeMovie(card("tt2", ["bollywood", "world"]))!);
+    expect(getCuratedMovies("bd-bengali").map((m) => m.id)).toEqual(["tt1"]);
+    expect(getCuratedMovies().map((m) => m.id)).toEqual(["tt2", "tt1"]);
+    expect(getCuratedMovies("bollywood", "film tt2")).toHaveLength(1);
+    expect(getCuratedMovies("bollywood", "nothing")).toHaveLength(0);
+    expect(getCuratedMovie("tt1")?.imdbId).toBe("tt1");
+  });
+
+  it("prunes films that lost their source", () => {
+    upsertCurated(sanitizeMovie(card("tt1", ["tamil"]))!);
+    upsertCurated(sanitizeMovie(card("tt2", ["tamil"]))!);
+    expect(pruneCurated((id) => id === "tt2")).toEqual(["tt1"]);
+    expect(listCurated().map((m) => m.id)).toEqual(["tt2"]);
+  });
+
+  it("sanitizes untrusted records: bad rows, non-HTTPS images, unknown fields", () => {
+    expect(sanitizeMovie(card("x", ["not-a-row"]))).toBeNull();
+    expect(sanitizeMovie({ id: "", name: "n", categoryIds: ["tamil"] })).toBeNull();
+    expect(sanitizeMovie("junk")).toBeNull();
+    const clean = sanitizeMovie(card("tt9", ["tamil"], { poster: "http://evil.example/p.jpg", background: "https://image.tmdb.org/b.jpg", secret: "x" }))!;
+    expect(clean.poster).toBeUndefined();
+    expect(clean.background).toBe("https://image.tmdb.org/b.jpg");
+    expect(clean).not.toHaveProperty("secret");
+    expect(replaceCurated([card("a", ["tamil"]), { bad: true }, card("b", ["korean"])])).toBe(2);
+  });
+});
+
+describe("admin: confirming a source places the film in the catalog", () => {
+  let server: ReturnType<typeof app.listen>;
+  const app = express();
+  let base = "";
+  const headers = { authorization: "Bearer secret-token", "content-type": "application/json" };
+  const placed: string[] = [];
+  let synced = 0;
+  beforeEach(async () => {
+    process.env.ADMIN_API_TOKEN = "secret-token";
+    app.use(createAdminRouter({
+      getFeed: async () => [], searchMovies: async () => [mk("tmdb:5", { name: "Poster Film", poster: "https://image.tmdb.org/t/p/w500/p.jpg" })],
+      placeMovie: async (id) => { placed.push(id); return { placed: true, categoryIds: ["bd-bengali"], name: "Dhakar Golpo" }; },
+      syncCatalog: async () => { synced++; }, tmdbConfigured: () => true
+    }));
+    await new Promise<void>((resolve) => { server = app.listen(0, "127.0.0.1", () => resolve()); });
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterEach(async () => { delete process.env.ADMIN_API_TOKEN; replaceLegalSources([]); placed.length = 0; synced = 0; await new Promise<void>((resolve) => { server.close(() => resolve()); }); });
+
+  it("places the film, reports where it is shown, and removes it again when the source is deleted", async () => {
+    const body = { movieId: "tmdb:5", title: "Film", url: "https://archive.org/download/y/film.mp4", license: "cc0", rightsEvidenceUrl: "https://archive.org/details/y", territory: "BD", rightsConfirmed: true };
+    const created = await (await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: JSON.stringify(body) })).json() as { id: string; placed: boolean; shownIn: string[]; movieName: string };
+    expect(placed).toEqual(["tmdb:5"]);
+    expect(created).toMatchObject({ placed: true, movieName: "Dhakar Golpo", shownIn: ["New Releases", "Bangladesh Bengali Cinema"] });
+    await fetch(`${base}/api/admin/sources/${created.id}`, { method: "DELETE", headers });
+    expect(synced).toBe(1);
+  });
+
+  it("a refused link does not touch the catalog; search results carry posters; config reports TMDB", async () => {
+    const bad = await fetch(`${base}/api/admin/sources`, { method: "POST", headers, body: JSON.stringify({ movieId: "tmdb:5", url: "https://piracy.example/x.mp4", license: "cc0", rightsEvidenceUrl: "https://archive.org/x", territory: "BD", rightsConfirmed: true }) });
+    expect(bad.status).toBe(400);
+    expect(placed).toEqual([]);
+    const search = await (await fetch(`${base}/api/admin/search?q=poster`, { headers })).json() as { movies: Array<{ poster: string }> };
+    expect(search.movies[0]?.poster).toContain("image.tmdb.org");
+    expect(((await (await fetch(`${base}/api/admin/config`, { headers })).json()) as { tmdb: boolean }).tmdb).toBe(true);
+  });
+
+  it("restore re-syncs the catalog and the backup carries the placed films", async () => {
+    upsertCurated(sanitizeMovie({ id: "tt1", name: "Kept", categoryIds: ["tamil"] })!);
+    const backup = await (await fetch(`${base}/api/admin/backup`, { headers })).json() as { movies: Array<{ id: string }> };
+    expect(backup.movies.map((m) => m.id)).toEqual(["tt1"]);
+    const restored = await (await fetch(`${base}/api/admin/restore`, { method: "POST", headers, body: JSON.stringify(backup) })).json() as { movies: number };
+    expect(restored.movies).toBe(1);
+    expect(synced).toBe(1);
+    replaceCurated([]);
   });
 });

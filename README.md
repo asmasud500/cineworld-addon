@@ -73,11 +73,13 @@ Set `ADMIN_API_TOKEN`, then open `https://<your-host>/admin` and enter the token
 - **Movies:** pin a film to the front or hide it everywhere.
 - **Sources:** add a direct video link for the chosen movie. The panel checks the link before saving: HTTPS only, host on the reviewed allowlist (archive.org, Wikimedia), a direct video file (`.mp4`, `.webm`, `.mkv`, `.m3u8` ...), a license label, a page that proves the rights, and your confirmation that you checked them. Links that fail are refused with the reason.
 - **Subtitles:** same checks for `.srt` / `.vtt` files.
-- **Backup:** download or restore pins, hidden films, sources and subtitles. Restore re-checks every record.
+- **Backup:** download or restore pins, hidden films, sources, subtitles and the placed films. Restore re-checks every record.
+
+Search in the panel uses TMDB. When you confirm a source, the film is looked up on TMDB and appears **immediately** in the catalog: at the front of the **New Releases** feed and of every row that matches its original language and country (for example a Bengali film from Bangladesh goes to *Bangladesh Bengali Cinema*, one from India to *West Bengal Bengali Cinema*; Hindi goes to Bollywood; films that fit no row go to *World Cinema*). The World row lists all of them. Genre filters and search work on them too. If you delete a film's last source, the film leaves the catalog again. If TMDB is not connected the source is still saved and served, but the film cannot be placed in a row.
 
 Added sources show up in the movie's stream list, ahead of the official-service links. The allowlist is fixed in code on purpose; adding a host needs a code change and review.
 
-Saved data lives in `data/` (`SOURCES_FILE`, `SUBTITLES_FILE`, `OVERRIDES_FILE` change the paths). On hosts with a temporary disk it is lost at the next deploy, so download a backup now and then, or mount a persistent disk.
+Saved data lives in `data/` (`SOURCES_FILE`, `SUBTITLES_FILE`, `OVERRIDES_FILE`, `CURATED_FILE` change the paths). On hosts with a temporary disk it is lost at the next deploy, so download a backup now and then, or mount a persistent disk.
 
 ## Legal playback policy
 

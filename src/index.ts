@@ -3,11 +3,13 @@ import stremioAddonSdk from "stremio-addon-sdk";
 const { addonBuilder, getRouter } = stremioAddonSdk as typeof import("stremio-addon-sdk");
 import { CINEMA_CATEGORIES, FEATURED_CATALOG_ID, FEATURED_CATALOG_NAME, UPCOMING_CATALOG_ID, UPCOMING_CATALOG_NAME, buildFeaturedFeed, buildUpcomingFeed, getCatalog, hasGenre, searchCatalog } from "./catalog.js";
 import { createAdminRouter } from "./admin.js";
+import type { PlaceResult } from "./admin.js";
+import { getCuratedMovie, getCuratedMovies, listCurated, pruneCurated, upsertCurated } from "./curated.js";
 import { applyOverrides, isHidden } from "./overrides.js";
 import { getReviewedSubtitles } from "./subtitles.js";
-import { getReviewedSources } from "./sources.js";
-import { getRememberedMovie, getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus, warmSeenMovies } from "./providers/upstream.js";
-import { GENRE_NAMES, enrichWithTmdbDetails, getTmdbNewReleases, getWatchOptions, getTmdbUpcoming, isTmdbConfigured, searchTmdbMovies, verifyForCategory } from "./providers/tmdb.js";
+import { LEGAL_SOURCES, getReviewedSources } from "./sources.js";
+import { getRememberedMovie, rememberMovies, getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus, warmSeenMovies } from "./providers/upstream.js";
+import { GENRE_NAMES, enrichWithTmdbDetails, getTmdbMovieCard, getTmdbNewReleases, getWatchOptions, getTmdbUpcoming, isTmdbConfigured, searchTmdbMovies, verifyForCategory } from "./providers/tmdb.js";
 import type { WatchKind } from "./providers/tmdb.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
 
@@ -18,7 +20,7 @@ function genreExtra() { return { name: "genre", options: [...GENRE_NAMES], isReq
 
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.6.0",
+  version: "0.7.0",
   name: "CineWorld",
   description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Streams are limited to reviewed rights-cleared sources and links to official services (data from TMDB / JustWatch).",
   resources: ["catalog", "meta", "stream", "subtitles"],
@@ -128,6 +130,28 @@ function categoryIdFrom(value: string): CinemaCategoryId {
   return CINEMA_CATEGORIES.some((category) => category.id === value) ? value as CinemaCategoryId : "world";
 }
 
+function mergeUnique(...lists: Movie[][]): Movie[] {
+  const unique = new Map<string, Movie>();
+  for (const movie of lists.flat()) if (!unique.has(movie.imdbId ?? movie.id)) unique.set(movie.imdbId ?? movie.id, movie);
+  return [...unique.values()];
+}
+
+/** Looks a film up on TMDB and stores it so it appears in the catalog rows that match its language/country. */
+async function placeMovie(movieId: string): Promise<PlaceResult> {
+  const card = await getTmdbMovieCard(movieId);
+  if (!card) return { placed: false, categoryIds: [] };
+  upsertCurated(card);
+  rememberMovies([card]);
+  return { placed: true, categoryIds: card.categoryIds, name: card.name };
+}
+
+/** Keeps the catalog in step with the sources: films without a source leave, films with a source but not yet placed are added. */
+async function syncCatalog(): Promise<void> {
+  pruneCurated((id) => getReviewedSources(id).length > 0);
+  const missing = [...new Set(LEGAL_SOURCES.map((source) => source.movieId))].filter((id) => !getCuratedMovie(id));
+  await Promise.allSettled(missing.slice(0, 30).map((id) => placeMovie(id)));
+}
+
 function genreFrom(value?: string): string | undefined {
   const wanted = value?.trim().toLocaleLowerCase();
   return GENRE_NAMES.find((name) => name.toLocaleLowerCase() === wanted);
@@ -138,7 +162,9 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
   const genre = genreFrom(extra?.genre);
   if (id === FEATURED_CATALOG_ID) {
     // Automatic feed: newest movies across every category (cached for 10 minutes).
-    const feed = applyOverrides(await getFeed(genre));
+    // Films with a source added in the admin panel come first, then the automatic feed.
+    const own = getCuratedMovies().filter((movie) => !genre || hasGenre(movie, genre));
+    const feed = applyOverrides(mergeUnique(own, await getFeed(genre)));
     return { metas: feed.slice(skip, skip + 100).map(toMetaPreview) };
   }
   if (id === UPCOMING_CATALOG_ID) {
@@ -152,7 +178,11 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
     getUpstreamCatalog(categoryId, skip, search).then((list) => verifyForCategory(list, categoryId)).catch(() => [] as Movie[])
   ]);
   const remote = [...fresh, ...upstream]; // brand-new releases first
-  const local = search ? searchCatalog(search) : getCatalog(id).slice(skip, skip + 100);
+  // Films with an admin-added source for this row come first (the World row shows all of them).
+  const own = getCuratedMovies(categoryId === "world" ? undefined : categoryId, search);
+  const local = search
+    ? [...own, ...searchCatalog(search)]
+    : [...(skip === 0 ? own : []), ...getCatalog(id).slice(skip, skip + 100)];
   const unique = new Map<string, Movie>();
   for (const movie of [...local, ...remote]) unique.set(movie.imdbId ?? movie.id, movie);
   const movies = [...unique.values()].filter((movie) => !genre || hasGenre(movie, genre));
@@ -162,6 +192,8 @@ builder.defineCatalogHandler(async ({ id, extra }: { id: string; extra?: { searc
 builder.defineMetaHandler(async ({ type, id }: { type: string; id: string }) => {
   if (type !== "movie" || !id || id.length > 120 || isHidden(id)) return { meta: null };
   const answer = async (movie: Movie) => ({ meta: toMeta(await enrichWithTmdbDetails(movie).catch(() => movie)) });
+  const own = getCuratedMovie(id);
+  if (own) return answer(own);
   const local = getCatalog().find((item) => (item.imdbId ?? item.id) === id && item.type === type);
   if (local) return answer(local);
   // 1) Anything we already listed in a catalog is answered directly.
@@ -214,10 +246,17 @@ app.get("/api/catalog", (_req, res) => {
 });
 app.use(createAdminRouter({
   getFeed: () => getFeed(),
-  searchMovies: (query) => searchTmdbMovies(query, "world")
+  searchMovies: (query) => searchTmdbMovies(query, "world"),
+  placeMovie,
+  syncCatalog,
+  tmdbConfigured: isTmdbConfigured
 }));
 app.use("/", getRouter(addonInterface));
 app.use((_req, res) => { res.status(404).json({ error: "not_found" }); });
+
+// Saved films must be answerable right after a restart; also repair any film that has a source but is not placed yet.
+rememberMovies(listCurated());
+void syncCatalog().catch(() => undefined);
 
 const server = app.listen(port, "0.0.0.0", () => {
   console.log(JSON.stringify({ level: "info", event: "server_started", port, publicBaseUrl }));

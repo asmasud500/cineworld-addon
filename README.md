@@ -62,6 +62,10 @@ Each category row shows only films that really belong to it. Films from the upst
 - **Stay awake:** on free hosts the add-on pings its own public URL every 10 minutes (uses `RENDER_EXTERNAL_URL` on Render; turn off with `KEEP_ALIVE=false`).
 - **Admin (pin/hide):** set `ADMIN_API_TOKEN`, then open `/admin`, enter the token and pin or hide films. Without a token the admin is off (404). Changes are saved to `data/overrides.json`, which lasts until the next redeploy on hosts with a temporary disk; for permanent choices put film ids in `PINNED_MOVIE_IDS` / `HIDDEN_MOVIE_IDS` (comma-separated).
 
+## Where to watch (official services)
+
+When you open a movie, the **stream** list shows where it can be watched legally in Bangladesh and India (default `WATCH_REGIONS=BD,IN`; change with a comma-separated list of two-letter country codes): subscription, free with ads, rent or buy, for example Netflix, Chorki or Hoichoi. Each entry opens the official TMDB/JustWatch page for that region. CineWorld does not fetch, proxy or resolve any video itself. Needs the TMDB key. Watch-provider data is powered by JustWatch, and attribution is required: *Streaming availability data provided by JustWatch via TMDB.* This product uses the TMDB API but is not endorsed or certified by TMDB.
+
 ## Legal playback policy
 
 A source must be added to `src/sources.ts` only after a human has checked the source's license/rights, the exact playback URL, territory restrictions, and whether direct linking is permitted. Metadata-provider results are for discovery only and never create playback links. The catalog deliberately has **no titles or playback streams by default** until verified metadata and source rights are curated. This avoids implying that a film is public domain merely because it is old or appears on an archive.

@@ -7,7 +7,8 @@ import { applyOverrides, isHidden } from "./overrides.js";
 import { getReviewedSubtitles } from "./subtitles.js";
 import { getReviewedSources } from "./sources.js";
 import { getRememberedMovie, getUpstreamCatalog, getUpstreamMeta, getUpstreamSourceStatus, warmSeenMovies } from "./providers/upstream.js";
-import { GENRE_NAMES, enrichWithTmdbDetails, getTmdbNewReleases, getTmdbUpcoming, isTmdbConfigured, searchTmdbMovies, verifyForCategory } from "./providers/tmdb.js";
+import { GENRE_NAMES, enrichWithTmdbDetails, getTmdbNewReleases, getWatchOptions, getTmdbUpcoming, isTmdbConfigured, searchTmdbMovies, verifyForCategory } from "./providers/tmdb.js";
+import type { WatchKind } from "./providers/tmdb.js";
 import type { CinemaCategoryId, Movie } from "./catalog.js";
 
 const port = Number.parseInt(process.env.PORT ?? "7000", 10);
@@ -17,9 +18,9 @@ function genreExtra() { return { name: "genre", options: [...GENRE_NAMES], isReq
 
 const manifest = {
   id: "org.cineworld.legal-cinema",
-  version: "0.4.0",
+  version: "0.5.0",
   name: "CineWorld",
-  description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Playback is shown only for reviewed rights-cleared sources.",
+  description: "International cinema discovery powered by configurable Stremio-compatible catalog add-ons. Streams are limited to reviewed rights-cleared sources and links to official services (data from TMDB / JustWatch).",
   resources: ["catalog", "meta", "stream", "subtitles"],
   types: ["movie"],
   catalogs: [
@@ -179,14 +180,26 @@ builder.defineSubtitlesHandler(({ id }: { id: string }) => Promise.resolve({
   subtitles: getReviewedSubtitles(id).map((record) => ({ id: record.id, url: record.url, lang: record.lang }))
 }));
 
-builder.defineStreamHandler(({ id }: { id: string }) => {
+const WATCH_LABELS: Record<WatchKind, string> = {
+  flatrate: "Subscription", free: "Free", ads: "Free with ads", rent: "Rent", buy: "Buy"
+};
+
+builder.defineStreamHandler(async ({ id }: { id: string }) => {
+  if (isHidden(id)) return { streams: [] };
   const movie = getCatalog().find((item) => (item.imdbId ?? item.id) === id);
-  const sources = movie ? getReviewedSources(movie.id) : [];
-  return Promise.resolve({ streams: sources.map((source) => ({
+  const reviewed = (movie ? getReviewedSources(movie.id) : []).map((source) => ({
     title: `CineWorld · ${source.license}`,
     url: source.url,
     behaviorHints: { notWebReady: false }
-  })) });
+  }));
+  // Official services only: each entry opens the legal provider's page (data from TMDB / JustWatch).
+  const options = await getWatchOptions(id).catch(() => []);
+  const official = options.slice(0, 12).map((option) => ({
+    name: "CineWorld",
+    title: `${option.provider} · ${WATCH_LABELS[option.kind]} · ${option.region}\nOpens the official page (via JustWatch)`,
+    externalUrl: option.link
+  }));
+  return { streams: [...reviewed, ...official] };
 });
 
 const addonInterface = builder.getInterface();

@@ -138,3 +138,47 @@ describe("admin API", () => {
     expect((await fetch(`${base}/api/admin/feed`)).status).toBe(404);
   });
 });
+
+import { getWatchOptions } from "../src/providers/tmdb.js";
+
+describe("official watch options", () => {
+  beforeEach(() => { process.env.TMDB_API_KEY = "k"; delete process.env.WATCH_REGIONS; });
+  afterEach(() => { delete process.env.TMDB_API_KEY; delete process.env.WATCH_REGIONS; vi.unstubAllGlobals(); });
+
+  const providers = {
+    results: {
+      BD: { link: "https://www.themoviedb.org/movie/9/watch?locale=BD", flatrate: [{ provider_name: "Chorki" }, { provider_name: "Chorki" }], rent: [{ provider_name: "Apple TV" }] },
+      IN: { link: "https://www.themoviedb.org/movie/9/watch?locale=IN", flatrate: [{ provider_name: "Netflix" }], ads: [{ provider_name: "MX Player" }] },
+      US: { link: "https://www.themoviedb.org/movie/9/watch?locale=US", flatrate: [{ provider_name: "Hulu" }] }
+    }
+  };
+  const stub = () => vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/find/tt9")) return new Response(JSON.stringify({ movie_results: [{ id: 9 }] }), { status: 200 });
+    if (url.includes("/movie/9/watch/providers")) return new Response(JSON.stringify(providers), { status: 200 });
+    return new Response("no", { status: 404 });
+  }));
+
+  it("lists Bangladesh then India, de-duplicated, official-page links only, skipping other regions", async () => {
+    stub();
+    const options = await getWatchOptions("tt9");
+    expect(options.map((o) => `${o.region}:${o.kind}:${o.provider}`)).toEqual([
+      "BD:flatrate:Chorki", "BD:rent:Apple TV", "IN:flatrate:Netflix", "IN:ads:MX Player"
+    ]);
+    expect(options.every((o) => o.link.startsWith("https://www.themoviedb.org/"))).toBe(true);
+  });
+
+  it("honours WATCH_REGIONS and works with tmdb: ids", async () => {
+    stub();
+    process.env.WATCH_REGIONS = "us";
+    expect((await getWatchOptions("tmdb:9")).map((o) => o.provider)).toEqual(["Hulu"]);
+  });
+
+  it("returns nothing without a key, for unknown id shapes, or when TMDB has no data", async () => {
+    stub();
+    expect(await getWatchOptions("custom:abc")).toEqual([]);
+    expect(await getWatchOptions("tt0000000")).toEqual([]);
+    delete process.env.TMDB_API_KEY;
+    expect(await getWatchOptions("tt9")).toEqual([]);
+  });
+});

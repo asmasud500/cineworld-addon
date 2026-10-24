@@ -257,3 +257,52 @@ export async function enrichWithTmdbDetails(movie: Movie): Promise<Movie> {
     ...(!movie.background && details.backdrop_path ? { background: `${IMAGE}w1280${details.backdrop_path}` } : {})
   };
 }
+
+export type WatchKind = "flatrate" | "free" | "ads" | "rent" | "buy";
+export interface WatchOption { provider: string; kind: WatchKind; region: string; link: string }
+
+const WATCH_KINDS: WatchKind[] = ["flatrate", "free", "ads", "rent", "buy"];
+const WATCH_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Regions whose official services are listed, in priority order (WATCH_REGIONS, default Bangladesh then India). */
+function watchRegions(): string[] {
+  const raw = process.env.WATCH_REGIONS ?? "BD,IN";
+  const regions = raw.split(",").map((r) => r.trim().toUpperCase()).filter((r) => /^[A-Z]{2}$/.test(r));
+  return regions.length ? [...new Set(regions)].slice(0, 5) : ["BD", "IN"];
+}
+
+async function tmdbIdFor(id: string): Promise<number | null> {
+  if (id.startsWith("tmdb:")) return Number.parseInt(id.slice(5), 10) || null;
+  if (!/^tt\d+$/.test(id)) return null;
+  const found = await tmdbGet<{ movie_results?: Array<{ id: number }> }>(`find/${id}`, { external_source: "imdb_id" }, EXTERNAL_ID_TTL_MS);
+  return found?.movie_results?.[0]?.id ?? null;
+}
+
+/**
+ * Where a film can be watched legally (subscription, free with ads, rent, buy) in the configured regions.
+ * Data comes from TMDB's watch-provider endpoint, which is powered by JustWatch (attribution is required).
+ * The link opens the official TMDB/JustWatch page for that region; no stream is fetched or proxied.
+ */
+export async function getWatchOptions(id: string): Promise<WatchOption[]> {
+  if (!isTmdbConfigured() || !id || id.length > 120) return [];
+  const tmdbId = await tmdbIdFor(id);
+  if (!tmdbId) return [];
+  const response = await tmdbGet<{ results?: Record<string, Partial<Record<WatchKind, Array<{ provider_name?: string }>>> & { link?: string }> }>(
+    `movie/${tmdbId}/watch/providers`, {}, WATCH_TTL_MS);
+  const options: WatchOption[] = [];
+  const seen = new Set<string>();
+  for (const region of watchRegions()) {
+    const entry = response?.results?.[region];
+    if (!entry?.link || !/^https:\/\//i.test(entry.link)) continue;
+    for (const kind of WATCH_KINDS) {
+      for (const provider of entry[kind] ?? []) {
+        const name = provider.provider_name?.trim();
+        const key = `${region}|${kind}|${name}`;
+        if (!name || seen.has(key)) continue;
+        seen.add(key);
+        options.push({ provider: name, kind, region, link: entry.link });
+      }
+    }
+  }
+  return options;
+}
